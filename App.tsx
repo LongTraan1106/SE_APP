@@ -1,43 +1,39 @@
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { Component } from 'react';
 import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
 import {
   SafeAreaProvider,
-  useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import WelcomeScreen from './components/WelcomeScreen';
-import Card from './components/Card';
+import React, { useState } from 'react';
+import DashboardScreen from './screens/DashboardScreen';
+import DocumentsScreen from './screens/DocumentsScreen';
 
+type ScreenName = 'Dashboard' | 'Documents';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
+  const [currentScreen, setCurrentScreen] = useState<ScreenName>('Dashboard');
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
+      <StatusBar 
+        barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
+        backgroundColor="#6B9071"
+        translucent={false}
+      />
+      <View style={styles.container}>
+        {currentScreen === 'Dashboard' && (
+          <DashboardScreen onNavigate={setCurrentScreen} />
+        )}
+        {currentScreen === 'Documents' && (
+          <DocumentsScreen onNavigate={setCurrentScreen} />
+        )}
+      </View>
     </SafeAreaProvider>
   );
 }
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
-
-  return (
-    <View style={styles.container}>
-      <Card 
-        title="My Card"
-        description="This is a simple card component."
-      />
-      <WelcomeScreen />
-    </View>
-  );
-}
-
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 20,
   },
 });
 
