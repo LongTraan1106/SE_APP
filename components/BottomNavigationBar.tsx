@@ -21,15 +21,17 @@ interface NavItem {
 
 interface BottomNavigationBarProps {
   onNavigate?: (screen: ScreenName) => void;
+  currentScreen?: ScreenName;
 }
 
 export function BottomNavigationBar({
   onNavigate,
+  currentScreen = 'Dashboard',
 }: BottomNavigationBarProps) {
 
   const navItems: NavItem[] = [
     { id: 1, routeName: 'Dashboard', IconComponent: Homeicon, label: 'Home' },
-    { id: 2, routeName: 'Dashboard', IconComponent: Docicon, label: 'Chat' },
+    { id: 2, routeName: 'Documents', IconComponent: Docicon, label: 'Docs' },
     { id: 3, routeName: 'Dashboard', IconComponent: Scanicon, label: 'Scan' },
     { id: 4, routeName: 'Dashboard', IconComponent: flashicon, label: 'Flashcard' },
     { id: 5, routeName: 'Dashboard', IconComponent: profileicon, label: 'Profile' },
@@ -46,6 +48,9 @@ export function BottomNavigationBar({
       {navItems.map(item => {
         const { IconComponent } = item;
         const isCenterItem = item.id === 3;
+        const isActive =
+          (currentScreen === 'Dashboard' && item.id === 1) ||
+          (currentScreen === 'Documents' && item.id === 2);
 
         return (
           <TouchableOpacity
@@ -58,6 +63,7 @@ export function BottomNavigationBar({
               style={[
                 styles.navIconContainer,
                 isCenterItem && styles.centerIconContainer,
+                isActive && !isCenterItem && styles.activeIndicator,
               ]}
             >
               <IconComponent
@@ -118,5 +124,11 @@ const styles = StyleSheet.create({
   },
   navIcon: {
     fontSize: 28,
+  },
+  activeIndicator: {
+    backgroundColor: '#AEC3B0',
+    borderRadius: 50,
+    width: 45,
+    height: 45,
   },
 });

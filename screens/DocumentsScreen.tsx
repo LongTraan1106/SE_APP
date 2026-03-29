@@ -8,7 +8,8 @@ import {
   Dimensions,
 } from 'react-native';
 import { BottomNavigationBar } from '../components/BottomNavigationBar';
-
+import Staricon from '../assets/icons/star.svg';
+import Trashicon from '../assets/icons/trash_can.svg';
 const { width } = Dimensions.get('window');
 
 type TabType = 'recently' | 'search' | 'favourite';
@@ -23,9 +24,10 @@ interface Document {
 
 interface DocumentsScreenProps {
   onNavigate?: (screen: ScreenName) => void;
+  currentScreen?: ScreenName;
 }
 
-function DocumentsScreen({ onNavigate }: DocumentsScreenProps) {
+function DocumentsScreen({ onNavigate, currentScreen = 'Documents' }: DocumentsScreenProps) {
   const [activeTab, setActiveTab] = React.useState<TabType>('recently');
 
   // Mock data - học viên có thể thay đổi dữ liệu theo nhu cầu
@@ -131,7 +133,7 @@ function DocumentsScreen({ onNavigate }: DocumentsScreenProps) {
       </ScrollView>
 
       {/* Bottom Navigation */}
-      <BottomNavigationBar onNavigate={onNavigate} />
+      <BottomNavigationBar onNavigate={onNavigate} currentScreen={currentScreen} />
     </View>
   );
 }
@@ -170,10 +172,17 @@ function DocumentItem({
           style={styles.actionButton}
           onPress={onToggleFavourite}
         >
-          <Text style={styles.starIcon}>☆</Text>
+            <Staricon
+              width={20}
+              height={20}
+            />
+
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionButton} onPress={onDelete}>
-          <Text style={styles.trashIcon}>🗑</Text>
+          <Trashicon
+            width={20}
+            height={20}
+          />
         </TouchableOpacity>
       </View>
     </View>
@@ -191,7 +200,7 @@ const styles = StyleSheet.create({
 
   // Header Styles
   headerSection: {
-    backgroundColor: '#8B9D8A',
+    backgroundColor: '#83A385',
     paddingHorizontal: 20,
     paddingVertical: 20,
     marginTop: 60,
@@ -226,17 +235,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 20,
-    backgroundColor: '#B8D4B5',
+    backgroundColor: '#AEC3B0',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 2,
+    elevation: 5,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
   tabButtonActive: {
-    backgroundColor: '#7A9577',
+    backgroundColor: '#97C09B',
   },
   tabText: {
     fontSize: 14,
@@ -244,7 +253,7 @@ const styles = StyleSheet.create({
     color: '#2D5341',
   },
   tabTextActive: {
-    color: '#FFFFFF',
+    color: '#2D5341',
   },
 
   // Scroll Content
@@ -270,7 +279,7 @@ const styles = StyleSheet.create({
   // Document Item
   documentItem: {
     flexDirection: 'row',
-    backgroundColor: '#A8C9B8',
+    backgroundColor: '#AEC3B0',
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -299,7 +308,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   tag: {
-    backgroundColor: '#7A9577',
+    backgroundColor: '#6B826B',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
@@ -313,7 +322,7 @@ const styles = StyleSheet.create({
   // Actions Container
   actionsContainer: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 5,
     alignItems: 'center',
   },
   actionButton: {
@@ -321,17 +330,9 @@ const styles = StyleSheet.create({
     height: 36,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 252, 252, 0.2)',
   },
-  starIcon: {
-    fontSize: 18,
-    color: '#2D5341',
-  },
-  trashIcon: {
-    fontSize: 18,
-  },
-
   // Bottom Space
   bottomSpace: {
     height: 20,

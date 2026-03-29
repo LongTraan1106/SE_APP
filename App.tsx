@@ -21,10 +21,10 @@ function App() {
       />
       <View style={styles.container}>
         {currentScreen === 'Dashboard' && (
-          <DashboardScreen onNavigate={setCurrentScreen} />
+          <DashboardScreen onNavigate={setCurrentScreen} currentScreen={currentScreen} />
         )}
         {currentScreen === 'Documents' && (
-          <DocumentsScreen onNavigate={setCurrentScreen} />
+          <DocumentsScreen onNavigate={setCurrentScreen} currentScreen={currentScreen} />
         )}
       </View>
     </SafeAreaProvider>

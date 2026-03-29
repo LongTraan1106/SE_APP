@@ -16,12 +16,13 @@ type ScreenName = 'Dashboard' | 'Documents';
 
 interface DashboardScreenProps {
   onNavigate?: (screen: ScreenName) => void;
+  currentScreen?: ScreenName;
 }
 
 
 const { width } = Dimensions.get('window');
 
-function DashboardScreen({ onNavigate }: DashboardScreenProps) {
+function DashboardScreen({ onNavigate, currentScreen = 'Dashboard' }: DashboardScreenProps) {
   const insets = useSafeAreaInsets();
   
   // Dữ liệu history
@@ -86,7 +87,7 @@ function DashboardScreen({ onNavigate }: DashboardScreenProps) {
       </ScrollView>
 
       {/* Bottom Navigation */}
-      <BottomNavigationBar onNavigate={onNavigate} />
+      <BottomNavigationBar onNavigate={onNavigate} currentScreen={currentScreen} />
     </View>
   );
 }

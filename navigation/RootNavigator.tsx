@@ -25,7 +25,7 @@ export function RootNavigator() {
         <Tab.Screen
           name="Chat"
           component={DashboardScreen}
-          options={{ title: 'Chat' }}
+          options={{ title: 'Documents' }}
         />
         <Tab.Screen
           name="Scan"
