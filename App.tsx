@@ -1,16 +1,12 @@
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
+import { StatusBar, StyleSheet, useColorScheme } from 'react-native';
 import {
   SafeAreaProvider,
 } from 'react-native-safe-area-context';
-import React, { useState } from 'react';
-import DashboardScreen from './screens/DashboardScreen';
-import DocumentsScreen from './screens/DocumentsScreen';
-
-type ScreenName = 'Dashboard' | 'Documents';
+import React from 'react';
+import { RootNavigator } from './navigation/RootNavigator';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
-  const [currentScreen, setCurrentScreen] = useState<ScreenName>('Dashboard');
 
   return (
     <SafeAreaProvider>
@@ -19,14 +15,7 @@ function App() {
         backgroundColor="#6B9071"
         translucent={false}
       />
-      <View style={styles.container}>
-        {currentScreen === 'Dashboard' && (
-          <DashboardScreen onNavigate={setCurrentScreen} currentScreen={currentScreen} />
-        )}
-        {currentScreen === 'Documents' && (
-          <DocumentsScreen onNavigate={setCurrentScreen} currentScreen={currentScreen} />
-        )}
-      </View>
+      <RootNavigator />
     </SafeAreaProvider>
   );
 }

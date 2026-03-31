@@ -10,20 +10,13 @@ import {
   Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BottomNavigationBar } from '../components/BottomNavigationBar';
-
-type ScreenName = 'Dashboard' | 'Documents';
-
-interface DashboardScreenProps {
-  onNavigate?: (screen: ScreenName) => void;
-  currentScreen?: ScreenName;
-}
-
+import { useNavigation } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
-function DashboardScreen({ onNavigate, currentScreen = 'Dashboard' }: DashboardScreenProps) {
+function DashboardScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
   
   // Dữ liệu history
   const historyData = [
@@ -33,9 +26,7 @@ function DashboardScreen({ onNavigate, currentScreen = 'Dashboard' }: DashboardS
   ];
 
   const handleNavigateToDocuments = () => {
-    if (onNavigate) {
-      onNavigate('Documents');
-    }
+    navigation.navigate('Documents');
   };
 
   return (
@@ -85,9 +76,6 @@ function DashboardScreen({ onNavigate, currentScreen = 'Dashboard' }: DashboardS
         {/* Extra space for bottom nav */}
         <View style={styles.bottomSpace} />
       </ScrollView>
-
-      {/* Bottom Navigation */}
-      <BottomNavigationBar onNavigate={onNavigate} currentScreen={currentScreen} />
     </View>
   );
 }

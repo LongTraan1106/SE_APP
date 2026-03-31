@@ -1,16 +1,15 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import Homeicon from '../assets/icons/home.svg';
 import Docicon from '../assets/icons/doc.svg';
 import flashicon from '../assets/icons/flashcard.svg';
 import profileicon from '../assets/icons/profile.svg';
 import Scanicon from '../assets/icons/scan.svg';
 
-type ScreenName = 'Dashboard' | 'Documents';
-
 interface NavItem {
   id: number;
-  routeName: ScreenName;
+  routeName: string;
   IconComponent: React.ComponentType<{
     width: number;
     height: number;
@@ -19,38 +18,38 @@ interface NavItem {
   label: string;
 }
 
-interface BottomNavigationBarProps {
-  onNavigate?: (screen: ScreenName) => void;
-  currentScreen?: ScreenName;
-}
-
-export function BottomNavigationBar({
-  onNavigate,
-  currentScreen = 'Dashboard',
-}: BottomNavigationBarProps) {
+export function BottomNavigationBar() {
+  const navigation = useNavigation<any>();
+  const route = useRoute();
 
   const navItems: NavItem[] = [
-    { id: 1, routeName: 'Dashboard', IconComponent: Homeicon, label: 'Home' },
+    { id: 1, routeName: 'Home', IconComponent: Homeicon, label: 'Home' },
     { id: 2, routeName: 'Documents', IconComponent: Docicon, label: 'Docs' },
-    { id: 3, routeName: 'Dashboard', IconComponent: Scanicon, label: 'Scan' },
-    { id: 4, routeName: 'Dashboard', IconComponent: flashicon, label: 'Flashcard' },
-    { id: 5, routeName: 'Dashboard', IconComponent: profileicon, label: 'Profile' },
+    { id: 3, routeName: 'Camera', IconComponent: Scanicon, label: 'Scan' },
+    { id: 4, routeName: 'Flashcard', IconComponent: flashicon, label: 'Flashcard' },
+    { id: 5, routeName: 'Profile', IconComponent: profileicon, label: 'Profile' },
   ];
 
-  const handleNavigation = (screenName: ScreenName) => {
-    if (onNavigate) {
-      onNavigate(screenName);
+  const handleNavigation = (screenName: string) => {
+    if (screenName === 'Camera') {
+      // Navigate to Camera as a modal
+      navigation.navigate('Camera');
+    } else {
+      // Navigate to tab screen
+      navigation.navigate('TabNavigator', { screen: screenName });
     }
   };
+
+  // Get current screen name - tab được render bên trong wrapper
+  // Nên route.name sẽ là tên của tab screen (Home, Documents, etc)
+  let currentScreen = route.name || 'Home';
 
   return (
     <View style={styles.bottomNav}>
       {navItems.map(item => {
         const { IconComponent } = item;
         const isCenterItem = item.id === 3;
-        const isActive =
-          (currentScreen === 'Dashboard' && item.id === 1) ||
-          (currentScreen === 'Documents' && item.id === 2);
+        const isActive = currentScreen === item.routeName;
 
         return (
           <TouchableOpacity
@@ -92,7 +91,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'center',
     borderRadius: 20,
-    marginBottom: 20,
+    marginBottom: 10,
     marginHorizontal: 15,
     position: 'relative',
   },

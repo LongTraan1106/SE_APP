@@ -7,13 +7,12 @@ import {
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
-import { BottomNavigationBar } from '../components/BottomNavigationBar';
 import Staricon from '../assets/icons/star.svg';
 import Trashicon from '../assets/icons/trash_can.svg';
+
 const { width } = Dimensions.get('window');
 
 type TabType = 'recently' | 'search' | 'favourite';
-type ScreenName = 'Dashboard' | 'Documents';
 
 interface Document {
   id: string;
@@ -22,12 +21,7 @@ interface Document {
   isFavourite: boolean;
 }
 
-interface DocumentsScreenProps {
-  onNavigate?: (screen: ScreenName) => void;
-  currentScreen?: ScreenName;
-}
-
-function DocumentsScreen({ onNavigate, currentScreen = 'Documents' }: DocumentsScreenProps) {
+function DocumentsScreen() {
   const [activeTab, setActiveTab] = React.useState<TabType>('recently');
 
   // Mock data - học viên có thể thay đổi dữ liệu theo nhu cầu
@@ -131,9 +125,6 @@ function DocumentsScreen({ onNavigate, currentScreen = 'Documents' }: DocumentsS
         {/* Extra space for bottom nav */}
         <View style={styles.bottomSpace} />
       </ScrollView>
-
-      {/* Bottom Navigation */}
-      <BottomNavigationBar onNavigate={onNavigate} currentScreen={currentScreen} />
     </View>
   );
 }
