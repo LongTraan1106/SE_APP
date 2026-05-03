@@ -5,7 +5,11 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import DashboardScreen from '../screens/DashboardScreen';
 import DocumentsScreen from '../screens/DocumentsScreen';
 import CameraScreen from '../screens/CameraScreen';
+import DocumentScanResultScreen from '../screens/DocumentScanResultScreen';
+import SignInScreen from '../screens/SignInScreen';
+import SignUpScreen from '../screens/SignUpScreen';
 import { TabScreenWrapper } from './TabScreenWrapper';
+import { useAuth } from '../contexts/AuthContext';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -31,7 +35,6 @@ function TabNavigator() {
         headerShown: false,
         tabBarStyle: { display: 'none' },
       }}
-      sceneContainerStyle={{ backgroundColor: '#E3EED4' }}
     >
       <Tab.Screen
         name="Home"
@@ -59,18 +62,43 @@ function TabNavigator() {
 
 // Root Stack Navigator
 export function RootNavigator() {
+  const { isLoggedIn, loading } = useAuth();
+
+  if (loading) {
+    // You can replace this with a proper splash screen
+    return (
+      <NavigationContainer>
+        <></>
+      </NavigationContainer>
+    );
+  }
+
   return (
     <NavigationContainer>
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
-          animationEnabled: true,
-          cardStyle: { backgroundColor: '#E3EED4' },
         }}
+        initialRouteName={isLoggedIn ? 'TabNavigator' : 'SignIn'}
       >
-        <Stack.Group>
-          <Stack.Screen name="TabNavigator" component={TabNavigator} />
-        </Stack.Group>
+        {/* Auth Stack */}
+        {!isLoggedIn && (
+          <Stack.Group>
+            <Stack.Screen
+              name="SignIn"
+              component={SignInScreen}
+              options={{ animationEnabled: false }}
+            />
+            <Stack.Screen name="SignUp" component={SignUpScreen} />
+          </Stack.Group>
+        )}
+
+        {/* App Stack */}
+        {isLoggedIn && (
+          <Stack.Group screenOptions={{ animationEnabled: false }}>
+            <Stack.Screen name="TabNavigator" component={TabNavigator} />
+          </Stack.Group>
+        )}
 
         {/* Modal screens */}
         <Stack.Group
@@ -79,6 +107,7 @@ export function RootNavigator() {
           }}
         >
           <Stack.Screen name="Camera" component={CameraScreen} />
+          <Stack.Screen name="DocumentScanResult" component={DocumentScanResultScreen} />
         </Stack.Group>
       </Stack.Navigator>
     </NavigationContainer>

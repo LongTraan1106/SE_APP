@@ -4,6 +4,7 @@ import {
 } from 'react-native-safe-area-context';
 import React from 'react';
 import { RootNavigator } from './navigation/RootNavigator';
+import { AuthProvider } from './contexts/AuthContext';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -15,7 +16,9 @@ function App() {
         backgroundColor="#6B9071"
         translucent={false}
       />
-      <RootNavigator />
+      <AuthProvider>
+        <RootNavigator />
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }

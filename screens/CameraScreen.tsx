@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   Alert,
   Platform,
 } from 'react-native';
@@ -12,114 +11,155 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { PERMISSIONS, RESULTS, request } from 'react-native-permissions';
 import DocumentScanner from '@dariyd/react-native-document-scanner';
+import RNFS from 'react-native-fs';
 
 function CameraScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [cameraPermission, setCameraPermission] = useState<boolean | null>(null);
+  const [scannedImages, setScannedImages] = useState<string[] | null>(null);
 
+  // Request camera permission on mount
   useEffect(() => {
     requestCameraPermission();
   }, []);
 
-  const requestCameraPermission = async () => {
+  // Navigate when scannedImages is ready
+  useEffect(() => {
+    if (scannedImages && scannedImages.length > 0) {
+      const timer = setTimeout(() => {
+        try {
+          navigation.navigate('DocumentScanResult', {
+            scannedImages: scannedImages,
+          });
+        } catch (error) {
+          console.error('Navigation error:', error);
+        }
+        setScannedImages(null);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [scannedImages, navigation]);
+
+  // ── Camera permission ──────────────────────────────────────────────────────
+
+  const requestCameraPermission = async (): Promise<boolean> => {
     try {
-      const permission = Platform.OS === 'android' 
-        ? PERMISSIONS.ANDROID.CAMERA 
-        : PERMISSIONS.IOS.CAMERA;
-      
+      const permission =
+        Platform.OS === 'android'
+          ? PERMISSIONS.ANDROID.CAMERA
+          : PERMISSIONS.IOS.CAMERA;
+
       const result = await request(permission);
-      
+
       if (result === RESULTS.GRANTED) {
         setCameraPermission(true);
-      } else {
+        return true;
+      } else if (result === RESULTS.DENIED) {
         setCameraPermission(false);
         Alert.alert(
           'Quyền Camera Bị Từ Chối',
-          'Ứng dụng cần quyền truy cập camera để hoạt động. Vui lòng bật quyền camera trong cài đặt.',
-          [{ text: 'OK' }]
+          'Ứng dụng cần quyền truy cập camera để hoạt động. Vui lòng cho phép quyền camera.',
+          [
+            { text: 'Hủy', style: 'cancel' },
+            { text: 'Thử Lại', onPress: () => requestCameraPermission() },
+          ]
         );
+        return false;
+      } else if (result === RESULTS.BLOCKED) {
+        setCameraPermission(false);
+        Alert.alert(
+          'Quyền Camera Bị Khóa',
+          'Quyền camera đã bị từ chối trước đó. Vui lòng bật trong Cài đặt ứng dụng.',
+          [{ text: 'OK', style: 'cancel' }]
+        );
+        return false;
       }
+
+      setCameraPermission(false);
+      return false;
     } catch (error) {
       console.error('Error requesting camera permission:', error);
       setCameraPermission(false);
+      return false;
     }
   };
+
+  // ── Scan document ──────────────────────────────────────────────────────────
 
   const handleTakePhoto = async () => {
     try {
       setIsLoading(true);
-      
-      DocumentScanner.launchScanner({}, (result: any) => {
+
+      DocumentScanner.launchScanner({}, async (result: any) => {
         setIsLoading(false);
-        
-        if (result && result.length > 0) {
-          // result là array của scanned images (uri)
-          const scannedImageUri = result[0];
-          setCapturedPhoto(scannedImageUri);
+
+        const scannedUris = result?.images || result;
+
+        if (Array.isArray(scannedUris) && scannedUris.length > 0) {
+          // Extract string URIs
+          const imageUris = scannedUris.map((img: any) => {
+            if (typeof img === 'string') return img;
+            if (img?.uri) return img.uri;
+            if (img?.path) return 'file://' + img.path;
+            return img;
+          });
+
+          try {
+            setIsLoading(true);
+            const savedUris = await saveImagesToDocuments(imageUris);
+            setScannedImages(savedUris);
+          } catch (error) {
+            console.error('Error processing images:', error);
+            Alert.alert('Cảnh báo', 'Có lỗi khi xử lý ảnh. Vui lòng thử lại.');
+          } finally {
+            setIsLoading(false);
+          }
+        } else {
+          Alert.alert('Thông báo', 'Không có tài liệu được quét hoặc đã cancel.');
         }
       });
     } catch (error: any) {
       setIsLoading(false);
-      Alert.alert('Lỗi', 'Không thể quét tài liệu');
       console.error('Error scanning document:', error);
+      Alert.alert('Lỗi', 'Không thể quét tài liệu: ' + error.message);
     }
   };
 
-  const handleDeletePhoto = () => {
-    setCapturedPhoto(null);
+  // ── Save images to app's persistent Documents directory ───────────────────
+  // No storage permission needed — DocumentDirectoryPath is app-private storage.
+
+  const saveImagesToDocuments = async (imageUris: string[]): Promise<string[]> => {
+    const documentsDir = RNFS.DocumentDirectoryPath + '/scanned_documents';
+
+    // Ensure directory exists
+    const dirExists = await RNFS.exists(documentsDir);
+    if (!dirExists) {
+      await RNFS.mkdir(documentsDir);
+    }
+
+    const savedUris: string[] = [];
+
+    for (const uri of imageUris) {
+      // Clean up source path (strip file:// for RNFS)
+      const sourcePath = uri.startsWith('file://') ? uri.slice(7) : uri;
+
+      // Generate unique destination filename
+      const filename = `scan_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+      const destPath = `${documentsDir}/${filename}`;
+
+      await RNFS.copyFile(sourcePath, destPath);
+
+      // Return file:// URI for use with <Image>
+      savedUris.push('file://' + destPath);
+    }
+
+    return savedUris;
   };
 
-  const handleGoBack = () => {
-    setCapturedPhoto(null);
-    navigation.goBack();
-  };
+  // ── Render ─────────────────────────────────────────────────────────────────
 
-  // // Nếu có ảnh được chụp, hiển thị ảnh
-  // if (capturedPhoto) {
-  //   return (
-  //     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-  //       {/* Header */}
-  //       <View style={styles.header}>
-  //         <TouchableOpacity onPress={handleGoBack}>
-  //           <Text style={styles.backButton}>← Quay lại</Text>
-  //         </TouchableOpacity>
-  //         <Text style={styles.headerTitle}>Ảnh đã chụp</Text>
-  //         <View style={{ width: 60 }} />
-  //       </View>
-
-  //       {/* Captured Photo */}
-  //       <View style={styles.photoContainer}>
-  //         <Image
-  //           source={{ uri: capturedPhoto }}
-  //           style={styles.capturedImage}
-  //           resizeMode="contain"
-  //         />
-  //       </View>
-
-  //       {/* Action Buttons */}
-  //       <View style={styles.buttonContainer}>
-  //         <TouchableOpacity
-  //           style={[styles.button, styles.deleteButton]}
-  //           onPress={handleDeletePhoto}
-  //         >
-  //           <Text style={styles.buttonText}>🗑 Xóa ảnh</Text>
-  //         </TouchableOpacity>
-
-  //         <TouchableOpacity
-  //           style={[styles.button, styles.backCameraButton]}
-  //           onPress={handleGoBack}
-  //         >
-  //           <Text style={styles.buttonText}>← Quay lại trang chủ</Text>
-  //         </TouchableOpacity>
-  //       </View>
-  //     </View>
-  //   );
-  // }
-
-  // Nếu không có ảnh, hiển thị menu quét tài liệu
   if (cameraPermission === false) {
     return (
       <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
@@ -129,17 +169,22 @@ function CameraScreen() {
             Vui lòng bật quyền camera trong cài đặt ứng dụng
           </Text>
           <TouchableOpacity
-            style={[styles.button, styles.backCameraButton]}
-            onPress={handleGoBack}
+            style={[styles.button, styles.retryButton]}
+            onPress={requestCameraPermission}
           >
-            <Text style={styles.buttonText}>Back</Text>
+            <Text style={styles.buttonText}>Thử Lại</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.button, styles.backCameraButton]}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.buttonText}>Quay Lại</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
-  // Nếu permission đang kiểm tra
   if (cameraPermission === null) {
     return (
       <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
@@ -154,20 +199,21 @@ function CameraScreen() {
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleGoBack}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.backButton}>← Quay lại</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Quét Tài Liệu</Text>
         <View style={{ width: 60 }} />
       </View>
 
-      {/* Main Content */}
+      {/* Guide */}
       <View style={styles.scannerGuideContainer}>
         <Text style={styles.guideTitleText}>📄 Quét Tài Liệu của Bạn</Text>
         <Text style={styles.guideDescriptionText}>
-          Bấm nút dưới để bắt đầu quét tài liệu. Hệ thống sẽ tự động phát hiện các cạnh của tài liệu và cắt chính xác.
+          Bấm nút dưới để bắt đầu quét tài liệu. Hệ thống sẽ tự động phát hiện
+          các cạnh của tài liệu và cắt chính xác.
         </Text>
-        
+
         <View style={styles.guideItemsContainer}>
           <View style={styles.guideItem}>
             <Text style={styles.guideItemText}>✅ Đặt tài liệu trên bề mặt phẳng</Text>
@@ -189,7 +235,7 @@ function CameraScreen() {
           disabled={isLoading}
         >
           <Text style={styles.scanButtonText}>
-            {isLoading ? '⏳ Đang quét...' : '📷 Quét Tài Liệu'}
+            {isLoading ? '⏳ Đang xử lý...' : '📷 Quét Tài Liệu'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -209,7 +255,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 15,
     paddingVertical: 12,
-    margin:5,
+    margin: 5,
     borderRadius: 10,
     backgroundColor: '#6B9071',
   },
@@ -223,21 +269,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
   },
-  photoContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f0f0',
-  },
-  capturedImage: {
-    width: '90%',
-    height: '80%',
-  },
-  buttonContainer: {
-    paddingHorizontal: 15,
-    paddingVertical: 15,
-    backgroundColor: '#f5f5f5',
-  },
   button: {
     paddingVertical: 12,
     paddingHorizontal: 15,
@@ -246,11 +277,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  deleteButton: {
-    backgroundColor: '#E74C3C',
+  retryButton: {
+    backgroundColor: '#6B9071',
   },
   backCameraButton: {
-    backgroundColor: '#6B9071',
+    backgroundColor: '#888',
   },
   buttonText: {
     color: '#fff',
