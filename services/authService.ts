@@ -50,6 +50,11 @@ export interface RefreshTokenResponse {
   data?: TokenResponse;
 }
 
+export interface LogoutResponse {
+  success: boolean;
+  message: string;
+}
+
 class AuthService {
   /**
    * Sign Up - Tạo tài khoản mới
@@ -137,6 +142,40 @@ class AuthService {
       return data;
     } catch (error) {
       throw error;
+    }
+  }
+
+  /**
+   * Logout - Đăng xuất
+   * Notifies backend about logout
+   */
+  async logout(refreshToken: string): Promise<LogoutResponse> {
+    try {
+      const response = await fetch(`${API_URL}/api/auth/signout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          refresh_token: refreshToken,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Logout failed');
+      }
+
+      return data;
+    } catch (error) {
+      // Even if backend logout fails, we should clear local data
+      // So we don't throw the error, just log it
+      console.error('Backend logout error:', error);
+      return {
+        success: true,
+        message: 'Logged out locally',
+      };
     }
   }
 

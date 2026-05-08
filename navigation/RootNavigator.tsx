@@ -4,10 +4,12 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import DashboardScreen from '../screens/DashboardScreen';
 import DocumentsScreen from '../screens/DocumentsScreen';
+import ProfileScreen from '../screens/ProfileScreen';
 import CameraScreen from '../screens/CameraScreen';
 import DocumentScanResultScreen from '../screens/DocumentScanResultScreen';
 import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
+import LoadingScreen from '../screens/LoadingScreen';
 import { TabScreenWrapper } from './TabScreenWrapper';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -24,6 +26,12 @@ const WrappedDashboard = () => (
 const WrappedDocuments = () => (
   <TabScreenWrapper>
     <DocumentsScreen />
+  </TabScreenWrapper>
+);
+
+const WrappedProfile = () => (
+  <TabScreenWrapper>
+    <ProfileScreen />
   </TabScreenWrapper>
 );
 
@@ -53,7 +61,7 @@ function TabNavigator() {
       />
       <Tab.Screen
         name="Profile"
-        component={WrappedDashboard}
+        component={WrappedProfile}
         options={{ title: 'Profile' }}
       />
     </Tab.Navigator>
@@ -62,13 +70,18 @@ function TabNavigator() {
 
 // Root Stack Navigator
 export function RootNavigator() {
-  const { isLoggedIn, loading } = useAuth();
+  const { isLoggedIn, authLoading } = useAuth();
 
-  if (loading) {
-    // You can replace this with a proper splash screen
+  if (authLoading) {
     return (
       <NavigationContainer>
-        <></>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen
+            name="Loading"
+            component={LoadingScreen}
+            options={{ animationEnabled: false }}
+          />
+        </Stack.Navigator>
       </NavigationContainer>
     );
   }

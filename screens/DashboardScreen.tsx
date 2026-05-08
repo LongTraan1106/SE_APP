@@ -40,7 +40,7 @@ function DashboardScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Divider */}
-        <View style={styles.divider} />
+        {/* <View style={styles.divider} /> */}
 
         {/* Feature Cards Section */}
         <View style={styles.cardsContainer}>

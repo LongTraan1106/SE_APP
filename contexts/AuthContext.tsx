@@ -7,6 +7,7 @@ export interface AuthContextType {
   isLoggedIn: boolean;
   user: UserResponse | null;
   loading: boolean;
+  authLoading: boolean;
   error: string | null;
   accessToken: string | null;
   refreshToken: string | null;
@@ -28,7 +29,8 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState<UserResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
@@ -38,7 +40,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
    */
   const checkAuthStatus = useCallback(async () => {
     try {
-      setLoading(true);
+      setAuthLoading(true);
       setError(null);
 
       const authData = await storageService.getAllAuthData();
@@ -55,7 +57,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.error('Error checking auth status:', err);
       setIsLoggedIn(false);
     } finally {
-      setLoading(false);
+      setAuthLoading(false);
     }
   }, []);
 
@@ -77,13 +79,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error(response.message || 'Sign up failed');
       }
 
-      if (response.data) {
-        // After successful sign up, automatically sign in
-        await signIn({
-          email: data.email,
-          password: data.password,
-        });
-      }
+      // Sign up successful - user will navigate to SignIn after viewing success modal
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Sign up failed';
       setError(errorMessage);
@@ -142,6 +138,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setLoading(true);
       setError(null);
 
+      // Call backend logout endpoint if we have a refresh token
+      if (refreshToken) {
+        await authService.logout(refreshToken);
+      }
+
       // Clear all auth data from storage
       await storageService.clearAuthData();
 
@@ -152,7 +153,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoggedIn(false);
     } catch (err) {
       console.error('Error during logout:', err);
-      // Still clear state even if storage clear fails
+      // Still clear state even if something fails
       setAccessToken(null);
       setRefreshToken(null);
       setUser(null);
@@ -160,7 +161,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshToken]);
 
   /**
    * Clear error message
@@ -180,6 +181,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isLoggedIn,
     user,
     loading,
+    authLoading,
     error,
     accessToken,
     refreshToken,

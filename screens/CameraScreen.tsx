@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
+  Image,
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +13,9 @@ import { useNavigation } from '@react-navigation/native';
 import { PERMISSIONS, RESULTS, request } from 'react-native-permissions';
 import DocumentScanner from '@dariyd/react-native-document-scanner';
 import RNFS from 'react-native-fs';
+import Ideas_icon from '../assets/icons/ideas.svg';
+import Surface_icon from '../assets/icons/surface.svg';
+import Camera_icon from '../assets/icons/camera.svg';
 
 function CameraScreen() {
   const insets = useSafeAreaInsets();
@@ -160,25 +164,27 @@ function CameraScreen() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+
+
   if (cameraPermission === false) {
     return (
       <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>❌ Quyền Camera Bị Từ Chối</Text>
+          <Text style={styles.errorText}>❌ Camera Permission Denied</Text>
           <Text style={styles.errorSubText}>
-            Vui lòng bật quyền camera trong cài đặt ứng dụng
+            Please enable camera permission in the app settings
           </Text>
           <TouchableOpacity
             style={[styles.button, styles.retryButton]}
             onPress={requestCameraPermission}
           >
-            <Text style={styles.buttonText}>Thử Lại</Text>
+            <Text style={styles.buttonText}>Try Again</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.button, styles.backCameraButton]}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.buttonText}>Quay Lại</Text>
+            <Text style={styles.buttonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -189,7 +195,7 @@ function CameraScreen() {
     return (
       <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Đang kiểm tra quyền...</Text>
+          <Text style={styles.errorText}>Checking permissions...</Text>
         </View>
       </View>
     );
@@ -200,29 +206,39 @@ function CameraScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backButton}>← Quay lại</Text>
+          <Text style={styles.backButton}>← Go Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Quét Tài Liệu</Text>
+        <Text style={styles.headerTitle}>Scan Documents</Text>
         <View style={{ width: 60 }} />
       </View>
 
       {/* Guide */}
+      
       <View style={styles.scannerGuideContainer}>
-        <Text style={styles.guideTitleText}>📄 Quét Tài Liệu của Bạn</Text>
+        <View style={styles.figContainer}>
+          <Image
+            source={require('../assets/scan_fig.png')}
+            style={styles.figImage}
+          />
+        </View>
+        <Text style={styles.guideTitleText}>Scan your Documents</Text>
         <Text style={styles.guideDescriptionText}>
-          Bấm nút dưới để bắt đầu quét tài liệu. Hệ thống sẽ tự động phát hiện
-          các cạnh của tài liệu và cắt chính xác.
+          Press the button below to start scanning your documents. The system will automatically detect
+          the edges of the document and crop it precisely.
         </Text>
 
         <View style={styles.guideItemsContainer}>
           <View style={styles.guideItem}>
-            <Text style={styles.guideItemText}>✅ Đặt tài liệu trên bề mặt phẳng</Text>
+            <Surface_icon width={24} height={24}/>
+            <Text style={styles.guideItemText}>Place the document on a flat surface</Text>
           </View>
           <View style={styles.guideItem}>
-            <Text style={styles.guideItemText}>✅ Đảm bảo ánh sáng đầy đủ</Text>
+            <Camera_icon width={24} height={24} />
+            <Text style={styles.guideItemText}>Ensure adequate lighting</Text>
           </View>
           <View style={styles.guideItem}>
-            <Text style={styles.guideItemText}>✅ Chụp hình vuông góc</Text>
+            <Ideas_icon width={24} height={24} />
+            <Text style={styles.guideItemText}>Take a straight-on photo</Text>
           </View>
         </View>
       </View>
@@ -235,7 +251,7 @@ function CameraScreen() {
           disabled={isLoading}
         >
           <Text style={styles.scanButtonText}>
-            {isLoading ? '⏳ Đang xử lý...' : '📷 Quét Tài Liệu'}
+            {isLoading ? '⏳ Processing...' : 'Scan Documents'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -246,7 +262,7 @@ function CameraScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E3EED4',
+    backgroundColor: '#F6EFDD',
     overflow: 'hidden',
   },
   header: {
@@ -257,7 +273,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     margin: 5,
     borderRadius: 10,
-    backgroundColor: '#6B9071',
+    backgroundColor: '#6B826B',
   },
   headerTitle: {
     fontSize: 17,
@@ -268,6 +284,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#fff',
     fontWeight: '600',
+  },
+  figContainer: {
+    alignItems: 'center',
+  },
+  figImage: {
+    width: 200,
+    height: 150,
+    resizeMode: 'contain',
   },
   button: {
     paddingVertical: 12,
@@ -314,17 +338,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     margin: 10,
     borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   guideTitleText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#6B9071',
+    color: '#323C1A',
     marginBottom: 15,
     textAlign: 'center',
   },
   guideDescriptionText: {
     fontSize: 14,
-    color: '#555',
+    color: '#323C1A',
     textAlign: 'center',
     marginBottom: 25,
     lineHeight: 20,
@@ -337,10 +366,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 15,
     marginVertical: 5,
-    backgroundColor: '#E3EED4',
-    borderLeftWidth: 4,
-    borderLeftColor: '#6B9071',
+    backgroundColor: '#E6F7EF',
+    borderWidth: 1,
+    borderColor: '#6B9071',
     borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   guideItemText: {
     fontSize: 13,
@@ -350,7 +382,7 @@ const styles = StyleSheet.create({
   captureButtonContainer: {
     alignItems: 'center',
     paddingVertical: 20,
-    backgroundColor: '#E3EED4',
+    backgroundColor: '#F6EFDD',
   },
   scanButton: {
     paddingVertical: 14,

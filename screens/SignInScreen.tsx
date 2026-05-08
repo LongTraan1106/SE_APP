@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  ImageBackground,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useNavigation } from '@react-navigation/native';
@@ -76,7 +77,7 @@ function SignInScreen() {
     setEmail('');
     setPassword('');
     setErrors({ email: '', password: '' });
-    navigation.navigate('SignUp');
+    navigation.replace('SignUp');
   };
 
   return (
@@ -89,18 +90,22 @@ function SignInScreen() {
     >
         {/* Top Section with Welcome Text */}
         <View style={styles.topSection}>
-          <Text style={styles.welcomeText}>WELCOME !</Text>
+          {/* <Text style={styles.welcomeText}>WELCOME !</Text> */}
 
           <View style={styles.iconContainer}>
             <Image
-              source={require('../assets/fig.png')}
+              source={require('../assets/Top_background.png')}
               style={styles.figImage}
             />
           </View>
         </View>
         <View style={styles.form_container}>
           {/* Sign In Form Section */}
-          <View style={styles.formSection}>
+          <ImageBackground
+            source={require('../assets/background_pattern.png')}
+            resizeMode="repeat"
+            style={styles.formSection}
+          >
             <Text style={styles.formTitle}>SIGN IN</Text>
 
             {/* Error Message */}
@@ -115,13 +120,13 @@ function SignInScreen() {
               <TextInput
                 style={[styles.input, errors.email && styles.inputError]}
                 placeholder="Email address"
-                placeholderTextColor="#999"
+                placeholderTextColor="#3c433388"
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 editable={!loading}
-                placeholderTextColor="#B0B0B0"
+                placeholderTextColor="#3c433388"
               />
               {errors.email && (
                 <Text style={styles.errorText}>{errors.email}</Text>
@@ -134,12 +139,12 @@ function SignInScreen() {
                 <TextInput
                   style={styles.passwordInput}
                   placeholder="Password"
-                  placeholderTextColor="#999"
+                  placeholderTextColor="#3c433388"
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
                   editable={!loading}
-                  placeholderTextColor="#B0B0B0"
+                  placeholderTextColor="#3c433388"
                 />
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
@@ -182,9 +187,9 @@ function SignInScreen() {
               </TouchableOpacity>
               <Text style={styles.signUpLinkText}> here.</Text>
             </View>
-          </View>
+          </ImageBackground>
         </View>
-      </KeyboardAwareScrollView>
+    </KeyboardAwareScrollView>
     );
   }
 
@@ -197,9 +202,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   topSection: {
-    backgroundColor: '#E5EFD7',
-    paddingTop: width * 0.15,
-    paddingBottom: 40,
+    backgroundColor: '#FDF7DF',
+    paddingTop: width * 0.26,
+    paddingBottom: 20,
     alignItems: 'center',
   },
   welcomeText: {
@@ -214,17 +219,17 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     justifyContent: 'center',
-    alignItems: 'flex-end',
+    alignItems: 'center',
   },
   figImage: {
-    width: width * 0.8,
-    height: height * 0.8,
+    width: width * 1,
+    height: height * 1,
     resizeMode: 'contain',
   },
   form_container: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: '#E5EFD7',
+    backgroundColor: '#789265',
   },
   formSection: {
     backgroundColor: '#A9B9A8',
@@ -235,6 +240,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
     height: height * 0.55,
     alignItems: 'center',
+    overflow: 'hidden',
   },
   formTitle: {
     fontSize: 28,
@@ -264,22 +270,22 @@ const styles = StyleSheet.create({
   },
   input: {
     width: width * 0.8,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#333333',
+    backgroundColor: '#E9EFE1',
+    borderWidth: 1.3,
+    borderColor: '#79876E',
     borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 20,
     fontSize: 16,
-    color: '#333333',
+    color: '#79876E',
     fontFamily: 'System',
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#333333',
+    backgroundColor: '#E9EFE1',
+    borderWidth: 1.3,
+    borderColor: '#79876E',
     borderRadius: 16,
     paddingHorizontal: 20,
     width: width * 0.8,
@@ -288,7 +294,7 @@ const styles = StyleSheet.create({
     width: width * 0.62,
     paddingVertical: 16,
     fontSize: 16,
-    color: '#333333',
+    color: '#79876E',
     fontFamily: 'System',
   },
   eyeIcon: {

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  Alert,
   FlatList,
   Dimensions,
   NativeScrollEvent,
@@ -16,6 +15,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import DocumentScanner from '@dariyd/react-native-document-scanner';
 import RNFS from 'react-native-fs';
+import Flashcard_icon from '../assets/icons/flashcard.svg';
+import Summarize_icon from '../assets/icons/doc.svg';
+import Save_icon from '../assets/icons/save.svg';
+import { CustomAlertModal, AlertButton } from '../components/CustomAlertModal';
 
 const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GALLERY_HEIGHT = SCREEN_HEIGHT * 0.48;
@@ -34,6 +37,20 @@ function DocumentScanResultScreen() {
   const [imageLoadingStates, setImageLoadingStates] = useState<{[key: number]: boolean}>({});
   const flatListRef = useRef<FlatList>(null);
 
+  // Custom Alert Modal State
+  const [alertModalVisible, setAlertModalVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState<{
+    title: string;
+    message: string;
+    icon: string;
+    buttons: AlertButton[];
+  }>({
+    title: '',
+    message: '',
+    icon: '⚠️',
+    buttons: [],
+  });
+
   // Handle scroll to update current page indicator
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const contentOffsetX = event.nativeEvent.contentOffset.x;
@@ -48,13 +65,33 @@ function DocumentScanResultScreen() {
     try {
       // Simulate API call
       await new Promise<void>(resolve => setTimeout(resolve, 1500));
-      Alert.alert(
-        '✅ Tóm Tắt',
-        'Đang xử lý tóm tắt tài liệu...\n\n(Tính năng này sẽ gọi backend để xử lý)',
-        [{ text: 'OK' }]
-      );
+      setAlertConfig({
+        title: '✅ Tóm Tắt',
+        message: 'Đang xử lý tóm tắt tài liệu...\n\n(Tính năng này sẽ gọi backend để xử lý)',
+        icon: '📋',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => setAlertModalVisible(false),
+            style: 'default',
+          },
+        ],
+      });
+      setAlertModalVisible(true);
     } catch (error) {
-      Alert.alert('Lỗi', 'Không thể tóm tắt tài liệu');
+      setAlertConfig({
+        title: 'Lỗi',
+        message: 'Không thể tóm tắt tài liệu',
+        icon: '❌',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => setAlertModalVisible(false),
+            style: 'default',
+          },
+        ],
+      });
+      setAlertModalVisible(true);
     } finally {
       setIsProcessing(false);
     }
@@ -65,13 +102,33 @@ function DocumentScanResultScreen() {
     try {
       // Simulate API call
       await new Promise<void>(resolve => setTimeout(resolve, 1500));
-      Alert.alert(
-        '✅ Tạo Flashcard',
-        'Đang tạo flashcard từ tài liệu...\n\n(Tính năng này sẽ gọi backend để xử lý)',
-        [{ text: 'OK' }]
-      );
+      setAlertConfig({
+        title: '✅ Tạo Flashcard',
+        message: 'Đang tạo flashcard từ tài liệu...\n\n(Tính năng này sẽ gọi backend để xử lý)',
+        icon: '🎴',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => setAlertModalVisible(false),
+            style: 'default',
+          },
+        ],
+      });
+      setAlertModalVisible(true);
     } catch (error) {
-      Alert.alert('Lỗi', 'Không thể tạo flashcard');
+      setAlertConfig({
+        title: 'Lỗi',
+        message: 'Không thể tạo flashcard',
+        icon: '❌',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => setAlertModalVisible(false),
+            style: 'default',
+          },
+        ],
+      });
+      setAlertModalVisible(true);
     } finally {
       setIsProcessing(false);
     }
@@ -82,22 +139,38 @@ function DocumentScanResultScreen() {
     try {
       // Simulate API call
       await new Promise<void>(resolve => setTimeout(resolve, 1500));
-      Alert.alert(
-        '✅ Lưu Thành Công',
-        `Tài liệu ${images.length} trang đã được lưu trữ!\n\n(Sẽ được thêm vào Documents)`,
-        [
-          { 
-            text: 'OK', 
+      setAlertConfig({
+        title: '✅ Lưu Thành Công',
+        message: `Tài liệu ${images.length} trang đã được lưu trữ!\n\n(Sẽ được thêm vào Documents)`,
+        icon: '💾',
+        buttons: [
+          {
+            text: 'OK',
             onPress: () => {
+              setAlertModalVisible(false);
               // Pop tất cả modal screens về TabNavigator, rồi navigate tới Documents tab
               navigation.popToTop();
               navigation.navigate('TabNavigator', { screen: 'Documents' });
-            }
-          }
-        ]
-      );
+            },
+            style: 'default',
+          },
+        ],
+      });
+      setAlertModalVisible(true);
     } catch (error) {
-      Alert.alert('Lỗi', 'Không thể lưu tài liệu');
+      setAlertConfig({
+        title: 'Lỗi',
+        message: 'Không thể lưu tài liệu',
+        icon: '❌',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => setAlertModalVisible(false),
+            style: 'default',
+          },
+        ],
+      });
+      setAlertModalVisible(true);
     } finally {
       setIsProcessing(false);
     }
@@ -158,7 +231,19 @@ function DocumentScanResultScreen() {
         });
       } catch (error) {
         console.error('Error appending scanned pages:', error);
-        Alert.alert('Lỗi', 'Không thể lưu trang mới. Vui lòng thử lại.');
+        setAlertConfig({
+          title: 'Lỗi',
+          message: 'Không thể lưu trang mới. Vui lòng thử lại.',
+          icon: '❌',
+          buttons: [
+            {
+              text: 'OK',
+              onPress: () => setAlertModalVisible(false),
+              style: 'default',
+            },
+          ],
+        });
+        setAlertModalVisible(true);
       } finally {
         setIsScanning(false);
       }
@@ -166,18 +251,27 @@ function DocumentScanResultScreen() {
   };
 
   const handleCancel = () => {
-    Alert.alert(
-      'Hủy Quét',
-      'Bạn chắc chắn muốn hủy các trang đã quét?',
-      [
-        { text: 'Không', onPress: () => {} },
+    setAlertConfig({
+      title: 'Hủy Quét',
+      message: 'Bạn chắc chắn muốn hủy các trang đã quét?',
+      icon: '⚠️',
+      buttons: [
+        {
+          text: 'Không',
+          onPress: () => setAlertModalVisible(false),
+          style: 'cancel',
+        },
         {
           text: 'Có',
-          onPress: () => navigation.popToTop(),
+          onPress: () => {
+            setAlertModalVisible(false);
+            navigation.popToTop();
+          },
           style: 'destructive',
         },
-      ]
-    );
+      ],
+    });
+    setAlertModalVisible(true);
   };
 
   // Render document page in gallery
@@ -225,7 +319,7 @@ function DocumentScanResultScreen() {
           )}
 
           <View style={styles.pageNumber}>
-            <Text style={styles.pageNumberText}>Trang {index + 1}</Text>
+            <Text style={styles.pageNumberText}>Page {index + 1}</Text>
           </View>
         </View>
       </View>
@@ -236,12 +330,12 @@ function DocumentScanResultScreen() {
     return (
       <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>❌ Không có tài liệu nào được quét</Text>
+          <Text style={styles.errorText}>❌ No documents scanned</Text>
           <TouchableOpacity
             style={[styles.button, styles.backButton]}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.buttonText}>Quay Lại</Text>
+            <Text style={styles.buttonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -255,7 +349,7 @@ function DocumentScanResultScreen() {
         <TouchableOpacity onPress={handleCancel}>
           <Text style={styles.cancelButton}>✕</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Kết Quả Quét</Text>
+        <Text style={styles.headerTitle}>Scan Results</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -297,10 +391,10 @@ function DocumentScanResultScreen() {
       {/* Info Section */}
       <View style={styles.infoSection}>
         <Text style={styles.infoText}>
-          📄 Đã quét {images.length} trang tài liệu
+          Scaned {images.length} pages successfully!
         </Text>
         <Text style={styles.infoSubText}>
-          Bạn có thể tóm tắt, tạo flashcard hoặc lưu trữ tài liệu này
+          You can summarize, create flashcards, or save this document
         </Text>
       </View>
 
@@ -311,8 +405,8 @@ function DocumentScanResultScreen() {
           onPress={handleSummarize}
           disabled={isProcessing}
         >
-          <Text style={styles.actionButtonEmoji}>📋</Text>
-          <Text style={styles.actionButtonText}>Tóm Tắt</Text>
+          <Summarize_icon width={24} height={24} style={{ marginBottom: 4 }} />
+          <Text style={styles.actionButtonText}>Summary</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -320,7 +414,7 @@ function DocumentScanResultScreen() {
           onPress={handleCreateFlashcard}
           disabled={isProcessing}
         >
-          <Text style={styles.actionButtonEmoji}>💳</Text>
+          <Flashcard_icon width={24} height={24} style={{ marginBottom: 4 }} />
           <Text style={styles.actionButtonText}>Flashcard</Text>
         </TouchableOpacity>
 
@@ -329,8 +423,8 @@ function DocumentScanResultScreen() {
           onPress={handleSaveDocument}
           disabled={isProcessing}
         >
-          <Text style={styles.actionButtonEmoji}>💾</Text>
-          <Text style={styles.actionButtonText}>Lưu Trữ</Text>
+          <Save_icon width={24} height={24} style={{ marginBottom: 4 }} />
+          <Text style={styles.actionButtonText}>Save</Text>
         </TouchableOpacity>
       </View>
 
@@ -346,10 +440,20 @@ function DocumentScanResultScreen() {
           disabled={isScanning || isProcessing}
         >
           <Text style={styles.secondaryButtonText}>
-            {isScanning ? '⏳ Đang quét...' : '↻ Quét Thêm Trang'}
+            {isScanning ? 'Scaning...' : 'Scan more pages'}
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Custom Alert Modal */}
+      <CustomAlertModal
+        visible={alertModalVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        buttons={alertConfig.buttons}
+        onDismiss={() => setAlertModalVisible(false)}
+      />
     </View>
   );
 }
@@ -357,7 +461,7 @@ function DocumentScanResultScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E3EED4',
+    backgroundColor: '#F5EEDB',
   },
   header: {
     flexDirection: 'row',
@@ -373,6 +477,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: 'bold',
     color: '#fff',
+    textAlign: 'center',
   },
   cancelButton: {
     fontSize: 24,
@@ -518,28 +623,26 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   summarizeButton: {
-    backgroundColor: '#F39C12',
+    backgroundColor: '#AEC3B0',
   },
   flashcardButton: {
-    backgroundColor: '#9B59B6',
+    backgroundColor: '#AEC3B0',
   },
   saveButton: {
-    backgroundColor: '#27AE60',
-  },
-  actionButtonEmoji: {
-    fontSize: 24,
-    marginBottom: 4,
+    backgroundColor: '#AEC3B0',
   },
   actionButtonText: {
-    color: '#fff',
+    color: '#344E39',
     fontSize: 12,
     fontWeight: '700',
-    textAlign: 'center',
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   secondaryActionsContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 10,
     marginBottom: 10,
   },
@@ -552,12 +655,14 @@ const styles = StyleSheet.create({
   },
   rescanButton: {
     borderColor: '#6B9071',
-    backgroundColor: 'transparent',
+    backgroundColor: '#6B9071',
+    width: '50%',
   },
   secondaryButtonText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#6B9071',
+    color: '#ffffff',
+    textAlign: 'center',
   },
   backButton: {
     backgroundColor: '#6B9071',

@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
+  ImageBackground,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useNavigation } from '@react-navigation/native';
@@ -35,6 +37,7 @@ function SignUpScreen() {
     password: '',
     confirmPassword: '',
   });
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // Clear error when user starts typing
   useEffect(() => {
@@ -117,7 +120,8 @@ function SignUpScreen() {
         email: email.trim(),
         password: password,
       });
-      // Navigation will be handled by RootNavigator when isLoggedIn changes
+      // Show success modal
+      setShowSuccessModal(true);
     } catch (err) {
       // Error is already set in context
       Alert.alert(
@@ -127,6 +131,17 @@ function SignUpScreen() {
     }
   };
 
+  const handleNavigateToSignInAfterSuccess = () => {
+    setShowSuccessModal(false);
+    clearError();
+    setUsername('');
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
+    setErrors({ username: '', email: '', password: '', confirmPassword: '' });
+    navigation.replace('SignIn');
+  };
+
   const handleNavigateToSignIn = () => {
     clearError();
     setUsername('');
@@ -134,31 +149,36 @@ function SignUpScreen() {
     setPassword('');
     setConfirmPassword('');
     setErrors({ username: '', email: '', password: '', confirmPassword: '' });
-    navigation.navigate('SignIn');
+    navigation.replace('SignIn');
   };
 
   return (
-    <KeyboardAwareScrollView
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-      enableOnAndroid={true}
-      extraScrollHeight={20}
-      keyboardShouldPersistTaps="handled"
-    >
-        {/* Top Section with Welcome Text */}
-        <View style={styles.topSection}>
-          <Text style={styles.welcomeText}>WELCOME !</Text>
+    <>
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        enableOnAndroid={true}
+        extraScrollHeight={20}
+        keyboardShouldPersistTaps="handled"
+      >
+          {/* Top Section with Welcome Text */}
+          <View style={styles.topSection}>
+            {/* <Text style={styles.welcomeText}>WELCOME !</Text>  */}
 
-          <View style={styles.iconContainer}>
-            <Image
-              source={require('../assets/fig.png')}
-              style={styles.figImage}
-            />
+            <View style={styles.iconContainer}>
+              <Image
+                source={require('../assets/Top_background.png')}
+                style={styles.figImage}
+              />
+            </View>
           </View>
-        </View>
-        <View style={styles.form_container}>
-          {/* Sign Up Form Section */}
-          <View style={styles.formSection}>
+          <View style={styles.form_container}>
+            {/* Sign Up Form Section */}
+            <ImageBackground
+              source={require('../assets/background_pattern.png')}
+              resizeMode="repeat"
+              style={styles.formSection}
+            >
             <Text style={styles.formTitle}>SIGN UP</Text>
 
             {/* Error Message */}
@@ -173,7 +193,7 @@ function SignUpScreen() {
               <TextInput
                 style={[styles.input, errors.username && styles.inputError]}
                 placeholder="Username"
-                placeholderTextColor="#B0B0B0"
+                placeholderTextColor="#3c433388"
                 value={username}
                 onChangeText={setUsername}
                 editable={!loading}
@@ -189,7 +209,7 @@ function SignUpScreen() {
               <TextInput
                 style={[styles.input, errors.email && styles.inputError]}
                 placeholder="Email address (@gmail.com)"
-                placeholderTextColor="#B0B0B0"
+                placeholderTextColor="#3c433388"
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -207,7 +227,7 @@ function SignUpScreen() {
                 <TextInput
                   style={styles.passwordInput}
                   placeholder="Password (6+, Uppercase, Number)"
-                  placeholderTextColor="#B0B0B0"
+                  placeholderTextColor="#3c433388"
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
@@ -240,7 +260,7 @@ function SignUpScreen() {
                 <TextInput
                   style={styles.passwordInput}
                   placeholder="Confirm password"
-                  placeholderTextColor="#B0B0B0"
+                  placeholderTextColor="#3c433388"
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry={!showConfirmPassword}
@@ -287,10 +307,37 @@ function SignUpScreen() {
               </TouchableOpacity>
               <Text style={styles.signInLinkText}> here.</Text>
             </View>
+            </ImageBackground>
+          </View>
+        </KeyboardAwareScrollView>
+
+      {/* Success Modal */}
+      <Modal
+        visible={showSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSuccessModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.successIcon}>
+              <Text style={styles.successIconText}>✓</Text>
+            </View>
+            <Text style={styles.modalTitle}>Sign Up Successful!</Text>
+            <Text style={styles.modalMessage}>
+              Your account has been created successfully.{"\n"}Please sign in to continue.
+            </Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={handleNavigateToSignInAfterSuccess}
+            >
+              <Text style={styles.modalButtonText}>Go to Sign In</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </KeyboardAwareScrollView>
-    );
+      </Modal>
+    </>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -300,16 +347,14 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    backgroundColor: '#E5EFD7',
-    // marginTop: 20,
   },
   topSection: {
-    backgroundColor: '#E5EFD7',
-    // paddingTop: 40,
-    paddingBottom: 70,
+    backgroundColor: '#FDF7DF',
+    paddingTop: height * 0.06,
+    // paddingBottom:58,
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    minHeight: height * 0.4,
+    justifyContent: 'center',
+    minHeight: height * 0.37,
   },
   welcomeText: {
     fontSize: 32,
@@ -324,35 +369,32 @@ const styles = StyleSheet.create({
     width: 180,
     height: 130,
     justifyContent: 'center',
-    alignItems: 'flex-end',
-    paddingTop: height * 0.05,
+    alignItems: 'center',
+    // paddingTop: height * 0.05,
   },
   figImage: {
-    width: width * 0.8,
-    height: height * 0.8,
+    width: width * 1,
+    height: height * 1,
     resizeMode: 'contain',
   },
   form_container: {
     flex: 1,
     justifyContent: 'flex-end',
-    // marginBottom: 20,
-    height: height * 0.5,
-    backgroundColor: '#A9B9A8',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: '#789265',
   },
   formSection: {
-    backgroundColor: '#A9B9A8',
+    backgroundColor: '#789265',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingTop: 20,
-    paddingBottom: 20,
+    paddingTop: 10,
+    // paddingBottom: 20,
     paddingHorizontal: 30,
     alignItems: 'center',
-    height: "100%",
-    // minHeight: height * 0.7,
+    height: height * 0.63,
+    overflow: 'hidden',
   },
   formTitle: {
+    paddingTop: 20,
     fontSize: 28,
     fontWeight: '700',
     color: '#2D5A3D',
@@ -379,23 +421,23 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   input: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#333333',
+    backgroundColor: '#E9EFE1',
+    borderWidth: 1.3,
+    borderColor: '#79876E',
     borderRadius: 16,
     paddingVertical: 14,
     paddingHorizontal: 18,
     fontSize: 15,
-    color: '#333333',
+    color: '#79876E',
     fontFamily: 'System',
     width: width * 0.8,
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#333333',
+    backgroundColor: '#E9EFE1',
+    borderWidth: 1.3,
+    borderColor: '#79876E',
     borderRadius: 16,
     paddingHorizontal: 18,
     width: width * 0.8,
@@ -404,7 +446,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 14,
     fontSize: 15,
-    color: '#333333',
+    color: '#79876E',
     fontFamily: 'System',
   },
   eyeIcon: {
@@ -461,6 +503,72 @@ const styles = StyleSheet.create({
     color: '#2D5A3D',
     fontWeight: '700',
     textDecorationLine: 'underline',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingVertical: 40,
+    paddingHorizontal: 30,
+    alignItems: 'center',
+    width: width * 0.85,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  successIcon: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#4CAF50',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  successIconText: {
+    fontSize: 40,
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#2D5A3D',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 15,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 30,
+    lineHeight: 22,
+  },
+  modalButton: {
+    backgroundColor: '#697E63',
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    borderRadius: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalButtonText: {
+    color: '#BED2BC',
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.5,
   },
 });
 
