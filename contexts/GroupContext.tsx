@@ -1,0 +1,349 @@
+/**
+ * Group Context
+ * Quản lý state cho group management across the app
+ */
+
+import React, { createContext, useState, useCallback, ReactNode } from 'react';
+import { groupService } from '../services/groupService';
+import {
+  Group,
+  GroupDetail,
+  GroupContextType,
+  CreateGroupRequest,
+  UpdateGroupRequest,
+  UserSearchResult,
+} from '../types/group';
+
+export const GroupContext = createContext<GroupContextType | undefined>(undefined);
+
+interface GroupProviderProps {
+  children: ReactNode;
+}
+
+export const GroupProvider: React.FC<GroupProviderProps> = ({ children }) => {
+  // State
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [currentGroup, setCurrentGroup] = useState<GroupDetail | null>(null);
+  const [groupMembers, setGroupMembers] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<Group[]>([]);
+  const [userSearchResults, setUserSearchResults] = useState<UserSearchResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ==================== Create Group ====================
+
+  const createGroup = useCallback(async (data: CreateGroupRequest) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const newGroup = await groupService.createGroup(data);
+      setGroups((prev) => [...prev, newGroup]);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create group';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ==================== Get Groups ====================
+
+  const getGroups = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const fetchedGroups = await groupService.getGroups();
+      setGroups(fetchedGroups);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch groups';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ==================== Get Group Details ====================
+
+  const getGroupDetails = useCallback(async (groupId: number) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const groupDetail = await groupService.getGroupDetails(groupId);
+      setCurrentGroup(groupDetail);
+      setGroupMembers(groupDetail.members);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch group details';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ==================== Search Public Groups ====================
+
+  const searchPublicGroups = useCallback(async (searchName: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const results = await groupService.searchPublicGroups(searchName);
+      setSearchResults(results);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to search groups';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ==================== Add Members ====================
+
+  const addMembers = useCallback(async (groupId: number, userIds: number[]) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const updatedGroup = await groupService.addMembers(groupId, userIds);
+      
+      // Update current group if it matches
+      if (currentGroup && currentGroup.id === groupId) {
+        setCurrentGroup(updatedGroup);
+        setGroupMembers(updatedGroup.members);
+      }
+      
+      // Update groups list
+      setGroups((prev) =>
+        prev.map((g) => (g.id === groupId ? updatedGroup : g))
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to add members';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [currentGroup]);
+
+  // ==================== Change Member Role ====================
+
+  const changeMemberRole = useCallback(
+    async (groupId: number, userId: number, role: 'admin' | 'member') => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        await groupService.changeMemberRole(groupId, userId, role);
+
+        // Update current group members
+        if (currentGroup && currentGroup.id === groupId) {
+          const updatedMembers = groupMembers.map((m) =>
+            m.user_id === userId ? { ...m, member_role: role } : m
+          );
+          setGroupMembers(updatedMembers);
+          setCurrentGroup({ ...currentGroup, members: updatedMembers });
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to change member role';
+        setError(errorMessage);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [currentGroup, groupMembers]
+  );
+
+  // ==================== Remove Member ====================
+
+  const removeMember = useCallback(
+    async (groupId: number, userId: number) => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        await groupService.removeMember(groupId, userId);
+
+        // Update current group
+        if (currentGroup && currentGroup.id === groupId) {
+          const updatedMembers = groupMembers.filter((m) => m.user_id !== userId);
+          setGroupMembers(updatedMembers);
+          setCurrentGroup({
+            ...currentGroup,
+            members: updatedMembers,
+            member_count: updatedMembers.length,
+          });
+        }
+
+        // Update groups list
+        setGroups((prev) =>
+          prev.map((g) =>
+            g.id === groupId ? { ...g, member_count: g.member_count - 1 } : g
+          )
+        );
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to remove member';
+        setError(errorMessage);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [currentGroup, groupMembers]
+  );
+
+  // ==================== Update Group ====================
+
+  const updateGroup = useCallback(async (groupId: number, data: UpdateGroupRequest) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const updatedGroup = await groupService.updateGroup(groupId, data);
+
+      // Update current group
+      if (currentGroup && currentGroup.id === groupId) {
+        setCurrentGroup({ ...currentGroup, ...updatedGroup });
+      }
+
+      // Update groups list
+      setGroups((prev) =>
+        prev.map((g) => (g.id === groupId ? updatedGroup : g))
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update group';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [currentGroup]);
+
+  // ==================== Delete Group ====================
+
+  const deleteGroup = useCallback(async (groupId: number) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      await groupService.deleteGroup(groupId);
+
+      // Remove from groups list
+      setGroups((prev) => prev.filter((g) => g.id !== groupId));
+
+      // Clear current group if deleted
+      if (currentGroup && currentGroup.id === groupId) {
+        setCurrentGroup(null);
+        setGroupMembers([]);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete group';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [currentGroup]);
+
+  // ==================== Join Public Group ====================
+
+  const joinGroup = useCallback(async (groupId: number) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      await groupService.joinGroup(groupId);
+
+      // Refresh groups list to show new membership
+      const updatedGroups = await groupService.getGroups();
+      setGroups(updatedGroups);
+
+      // Refresh current group details
+      const groupDetails = await groupService.getGroupDetails(groupId);
+      setCurrentGroup(groupDetails);
+      setGroupMembers(groupDetails.members);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to join group';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ==================== Search Users ====================
+
+  const searchUsers = useCallback(async (username: string, excludeGroupId?: number) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const results = await groupService.searchUsers(username, excludeGroupId);
+      setUserSearchResults(results);
+    } catch (err) {
+      // Don't throw error for search - just show empty results
+      // This provides better UX: "No users found" instead of error alert
+      const errorMessage = err instanceof Error ? err.message : 'Failed to search users';
+      console.error('Search users error:', errorMessage);
+      setUserSearchResults([]);
+      setError(null); // Don't show error alert, let component show "No users found"
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ==================== Clear Functions ====================
+
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  const clearCurrentGroup = useCallback(() => {
+    setCurrentGroup(null);
+    setGroupMembers([]);
+  }, []);
+
+  // ==================== Provider Value ====================
+
+  const value: GroupContextType = {
+    groups,
+    currentGroup,
+    groupMembers,
+    searchResults,
+    userSearchResults,
+    loading,
+    error,
+    createGroup,
+    getGroups,
+    getGroupDetails,
+    searchPublicGroups,
+    addMembers,
+    changeMemberRole,
+    removeMember,
+    updateGroup,
+    deleteGroup,
+    joinGroup,
+    searchUsers,
+    clearError,
+    clearCurrentGroup,
+  };
+
+  return <GroupContext.Provider value={value}>{children}</GroupContext.Provider>;
+};
+
+/**
+ * Hook to use GroupContext
+ */
+export const useGroup = (): GroupContextType => {
+  const context = React.useContext(GroupContext);
+  if (!context) {
+    throw new Error('useGroup must be used within GroupProvider');
+  }
+  return context;
+};

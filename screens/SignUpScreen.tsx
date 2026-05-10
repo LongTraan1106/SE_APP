@@ -12,6 +12,7 @@ import {
   Modal,
   ImageBackground,
 } from 'react-native';
+import { Dropdown } from 'react-native-element-dropdown';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useNavigation } from '@react-navigation/native';
 import { CloudIcon } from '../components/CloudIcon';
@@ -21,6 +22,11 @@ import CloseEyeIcon from '../assets/icons/close_eye.svg';
 
 const { width, height } = Dimensions.get('window');
 
+const roleData = [
+  { label: 'Student', value: 'student' },
+  { label: 'Teacher', value: 'teacher' },
+];
+
 function SignUpScreen() {
   const navigation = useNavigation<any>();
   const { signUp, loading, error, clearError } = useAuth();
@@ -29,6 +35,7 @@ function SignUpScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState('student');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState({
@@ -36,6 +43,7 @@ function SignUpScreen() {
     email: '',
     password: '',
     confirmPassword: '',
+    role: '',
   });
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
@@ -44,7 +52,7 @@ function SignUpScreen() {
     if (error) {
       clearError();
     }
-  }, [username, email, password, confirmPassword]);
+  }, [username, email, password, confirmPassword, role]);
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
@@ -70,6 +78,7 @@ function SignUpScreen() {
       email: '',
       password: '',
       confirmPassword: '',
+      role: '',
     };
 
     if (!username.trim()) {
@@ -100,12 +109,17 @@ function SignUpScreen() {
       newErrors.confirmPassword = 'Passwords do not match';
     }
 
+    if (!role || (role !== 'teacher' && role !== 'student')) {
+      newErrors.role = 'Please select a valid role';
+    }
+
     setErrors(newErrors);
     return (
       !newErrors.username &&
       !newErrors.email &&
       !newErrors.password &&
-      !newErrors.confirmPassword
+      !newErrors.confirmPassword &&
+      !newErrors.role
     );
   };
 
@@ -119,6 +133,7 @@ function SignUpScreen() {
         username: username.trim(),
         email: email.trim(),
         password: password,
+        role: role,
       });
       // Show success modal
       setShowSuccessModal(true);
@@ -138,7 +153,8 @@ function SignUpScreen() {
     setEmail('');
     setPassword('');
     setConfirmPassword('');
-    setErrors({ username: '', email: '', password: '', confirmPassword: '' });
+    setRole('student');
+    setErrors({ username: '', email: '', password: '', confirmPassword: '', role: '' });
     navigation.replace('SignIn');
   };
 
@@ -148,7 +164,8 @@ function SignUpScreen() {
     setEmail('');
     setPassword('');
     setConfirmPassword('');
-    setErrors({ username: '', email: '', password: '', confirmPassword: '' });
+    setRole('student');
+    setErrors({ username: '', email: '', password: '', confirmPassword: '', role: '' });
     navigation.replace('SignIn');
   };
 
@@ -218,6 +235,33 @@ function SignUpScreen() {
               />
               {errors.email && (
                 <Text style={styles.errorText}>{errors.email}</Text>
+              )}
+            </View>
+
+            {/* Role Selection Dropdown */}
+            <View style={styles.inputWrapper}>
+              <Dropdown
+                style={[styles.dropdown, errors.role && styles.inputError]}
+                placeholderStyle={styles.dropdownPlaceholder}
+                selectedTextStyle={styles.dropdownSelectedText}
+                inputSearchStyle={styles.dropdownInputSearch}
+                iconStyle={styles.dropdownIcon}
+                containerStyle={styles.dropdownContainer}
+                itemContainerStyle={styles.dropdownItemContainer}
+                itemTextStyle={styles.dropdownItemText}
+                activeColor={styles.dropdownActiveColor.backgroundColor}
+                data={roleData}
+                search={false}
+                maxHeight={200}
+                labelField="label"
+                valueField="value"
+                placeholder="Select Role"
+                value={role}
+                onChange={(item) => setRole(item.value)}
+                disable={loading}
+              />
+              {errors.role && (
+                <Text style={styles.errorText}>{errors.role}</Text>
               )}
             </View>
 
@@ -387,18 +431,18 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingTop: 10,
-    // paddingBottom: 20,
+    paddingBottom: 30,
     paddingHorizontal: 30,
     alignItems: 'center',
-    height: height * 0.63,
-    overflow: 'hidden',
+    minHeight: height * 0.63,
+    overflow: 'visible',
   },
   formTitle: {
     paddingTop: 20,
     fontSize: 28,
     fontWeight: '700',
     color: '#2D5A3D',
-    textAlign: 'center',
+    // textAlign: 'center',
     marginBottom: 25,
     letterSpacing: 1,
   },
@@ -428,9 +472,64 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 18,
     fontSize: 15,
-    color: '#79876E',
+    color: '#344E39',
     fontFamily: 'System',
     width: width * 0.8,
+  },
+  dropdown: {
+    backgroundColor: '#E9EFE1',
+    borderWidth: 1.3,
+    borderColor: '#79876E',
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    width: width * 0.8,
+    height: 52,
+  },
+  dropdownPlaceholder: {
+    fontSize: 15,
+    color: '#3c433388',
+  },
+  dropdownSelectedText: {
+    fontSize: 15,
+    color: '#79876E',
+    fontWeight: '500',
+  },
+  dropdownInputSearch: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#79876E',
+    paddingLeft: 12,
+    color: '#344E39',
+    fontSize: 14,
+  },
+  dropdownIcon: {
+    tintColor: '#79876E',
+  },
+  dropdownContainer: {
+    backgroundColor: '#E9EFE1',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#79876E',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  dropdownItemContainer: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#D5E3CF',
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: '#2D5A3D',
+    fontWeight: '500',
+  },
+  dropdownActiveColor: {
+    backgroundColor: '#BED2BC',
   },
   passwordContainer: {
     flexDirection: 'row',
@@ -502,6 +601,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#2D5A3D',
     fontWeight: '700',
+    textAlign: 'center',
     textDecorationLine: 'underline',
   },
   // Modal Styles

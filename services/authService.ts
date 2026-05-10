@@ -5,6 +5,7 @@ export interface SignUpRequest {
   username: string;
   email: string;
   password: string;
+  role: string;  // teacher, student
 }
 
 export interface SignInRequest {
@@ -22,6 +23,11 @@ export interface UserResponse {
   id: number;
   username: string;
   email: string;
+  role: string;
+  documents_count: number;
+  flashcards_count: number;
+  groups_count: number;
+  current_streak: number;
   created_at: string;
 }
 
@@ -62,6 +68,7 @@ class AuthService {
    * - username: 3-20 chars, only a-z, A-Z, 0-9, _
    * - email: must be @gmail.com
    * - password: min 6 chars, must have 1 uppercase + 1 number
+   * - role: teacher or student
    */
   async signUp(request: SignUpRequest): Promise<SignUpResponse> {
     try {
@@ -74,8 +81,17 @@ class AuthService {
           username: request.username,
           email: request.email,
           password: request.password,
+          role: request.role,
         }),
       });
+
+      const contentType = response.headers.get('content-type');
+      
+      // Check if response is JSON
+      if (!contentType || !contentType.includes('application/json')) {
+        const textData = await response.text();
+        throw new Error(`Server error: ${response.status} - ${textData}`);
+      }
 
       const data = await response.json();
 
@@ -85,6 +101,7 @@ class AuthService {
 
       return data;
     } catch (error) {
+      console.error('Sign up error:', error);
       throw error;
     }
   }
@@ -106,6 +123,13 @@ class AuthService {
         }),
       });
 
+      const contentType = response.headers.get('content-type');
+      
+      if (!contentType || !contentType.includes('application/json')) {
+        const textData = await response.text();
+        throw new Error(`Server error: ${response.status} - ${textData}`);
+      }
+
       const data = await response.json();
 
       if (!response.ok) {
@@ -114,6 +138,7 @@ class AuthService {
 
       return data;
     } catch (error) {
+      console.error('Sign in error:', error);
       throw error;
     }
   }

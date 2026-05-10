@@ -49,6 +49,11 @@ function ProfileScreen() {
     ? user.username.substring(0, 1).toUpperCase()
     : 'U';
 
+  // Format role display: capitalize first letter
+  const displayRole = user?.role 
+    ? user.role.charAt(0).toUpperCase() + user.role.slice(1)
+    : 'Student';
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView
@@ -57,58 +62,91 @@ function ProfileScreen() {
       >
         {/* Profile Card */}
         <View style={styles.profileCard}>
-          {/* Avatar Circle */}
-          <View style={styles.avatarContainer}>
+          {/* Avatar + User Info Row */}
+          <View style={styles.headerRow}>
+            {/* Avatar Circle */}
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{initials}</Text>
             </View>
-          </View>
 
-          {/* User Info Section */}
-          <View style={styles.userInfoContainer}>
-            <View style={styles.userInfo}>
+            {/* User Info Section */}
+            <View style={styles.userInfoSection}>
               <Text style={styles.nameLabel}>
                 {user?.username || 'User'}
               </Text>
-              <Text style={styles.emailLabel}>
-                Email: <Text style={styles.emailValue}>{user?.email}</Text>
+              <Text style={styles.infoLine}>
+                <Text style={styles.infoLabel}>Email: </Text>
+                <Text style={styles.infoValue}>{user?.email}</Text>
               </Text>
-              <Text style={styles.roleLabel}>
-                Role: <Text style={styles.roleValue}>Student</Text>
-              </Text>
-              <Text style={styles.fieldLabel}>
-                Field (optional): <Text style={styles.fieldValue}>-</Text>
+              <Text style={styles.infoLine}>
+                <Text style={styles.infoLabel}>Role: </Text>
+                <Text style={styles.infoValue}>{displayRole}</Text>
               </Text>
             </View>
+
+            {/* Settings Icon */}
+            <TouchableOpacity style={styles.settingsIcon}>
+              <Text style={styles.settingsText}>⚙️</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Action Buttons */}
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={handleEditProfile}
-            >
-              <Text style={styles.editButtonText}>Edit Profile</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.signOutButton, signingOut && styles.buttonDisabled]}
-              onPress={handleSignOut}
-              disabled={signingOut}
-            >
-              {signingOut ? (
-                <ActivityIndicator color="#8B9D8A" size="small" />
-              ) : (
-                <Text style={styles.signOutButtonText}>Sign Out</Text>
-              )}
-            </TouchableOpacity>
+          {/* Statistics Buttons */}
+          <View style={styles.statsContainer}>
+            <View style={styles.statButton}>
+              <Text style={styles.statLabel}>Docs</Text>
+              <Text style={styles.statValue}>{user?.documents_count || 0}</Text>
+            </View>
+            <View style={styles.statButton}>
+              <Text style={styles.statLabel}>FlashCard</Text>
+              <Text style={styles.statValue}>{user?.flashcards_count || 0}</Text>
+            </View>
+            <View style={styles.statButton}>
+              <Text style={styles.statLabel}>Group</Text>
+              <Text style={styles.statValue}>{user?.groups_count || 0}</Text>
+            </View>
           </View>
         </View>
 
-        {/* Empty Content Cards for Future Features */}
-        <View style={styles.contentCardsContainer}>
-          <View style={styles.contentCard} />
-          <View style={styles.contentCard} />
+        {/* Stats Cards Row */}
+        <View style={styles.statsCardsContainer}>
+          {/* Current Streak Card */}
+          <View style={styles.statsCard}>
+            <Text style={styles.streakValue}>{user?.current_streak || 0}</Text>
+            <Text style={styles.fireIcon}>🔥</Text>
+            <Text style={styles.streakLabel}>Current Streak</Text>
+          </View>
+
+          {/* My Group Card */}
+          <TouchableOpacity 
+            style={styles.groupCard}
+            onPress={() => navigation.navigate('Groups')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.groupIcon}>👥</Text>
+            <Text style={styles.groupLabel}>My Group</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={handleEditProfile}
+          >
+            <Text style={styles.editButtonText}>Edit Profile</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.signOutButton, signingOut && styles.buttonDisabled]}
+            onPress={handleSignOut}
+            disabled={signingOut}
+          >
+            {signingOut ? (
+              <ActivityIndicator color="#8B9D8A" size="small" />
+            ) : (
+              <Text style={styles.signOutButtonText}>Sign Out</Text>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Additional spacing */}
@@ -149,11 +187,14 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
-  // Avatar Styles
-  avatarContainer: {
+  // Header Row (Avatar + Info)
+  headerRow: {
     flexDirection: 'row',
-    marginBottom: 20,
+    alignItems: 'flex-start',
+    marginBottom: 24,
+    gap: 16,
   },
+  // Avatar Styles
   avatar: {
     width: 80,
     height: 80,
@@ -161,60 +202,146 @@ const styles = StyleSheet.create({
     backgroundColor: '#C5D8C0',
     justifyContent: 'center',
     alignItems: 'center',
-    borderColor: '#8B9D8A',
+    borderColor: '#2D3C2C',
     borderWidth: 3,
+    flexShrink: 0,
   },
   avatarText: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#5A6B56',
+    color: '#2D3C2C',
   },
-  // User Info Styles
-  userInfoContainer: {
-    marginBottom: 24,
-    marginLeft: 0,
-  },
-  userInfo: {
-    gap: 8,
+  // User Info Section
+  userInfoSection: {
+    flex: 1,
+    justifyContent: 'flex-start',
   },
   nameLabel: {
     fontSize: 18,
     fontWeight: '700',
     color: '#2D3C2C',
+    marginBottom: 6,
+  },
+  infoLine: {
+    fontSize: 13,
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  infoLabel: {
+    fontWeight: '600',
+    color: '#2D3C2C',
+  },
+  infoValue: {
+    fontWeight: '500',
+    color: '#1A2419',
+  },
+  // Settings Icon
+  settingsIcon: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 32,
+    height: 32,
+    paddingTop: 2,
+  },
+  settingsText: {
+    fontSize: 24,
+  },
+  // Stats Container
+  statsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  statButton: {
+    flex: 1,
+    backgroundColor: '#C5D8C0',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2D3C2C',
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2D3C2C',
+  },
+  // Stats Cards Row
+  statsCardsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  statsCard: {
+    flex: 1,
+    backgroundColor: '#AEC3B0',
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  streakValue: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: '#2D3C2C',
+    marginBottom: 4,
+  },
+  fireIcon: {
+    fontSize: 40,
     marginBottom: 8,
   },
-  emailLabel: {
-    fontSize: 14,
+  streakLabel: {
+    fontSize: 12,
     fontWeight: '600',
     color: '#2D3C2C',
+    textAlign: 'center',
   },
-  emailValue: {
-    fontWeight: '500',
-    color: '#1A2419',
+  groupCard: {
+    flex: 1,
+    backgroundColor: '#AEC3B0',
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  roleLabel: {
-    fontSize: 14,
+  groupIcon: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  groupLabel: {
+    fontSize: 12,
     fontWeight: '600',
     color: '#2D3C2C',
-  },
-  roleValue: {
-    fontWeight: '500',
-    color: '#1A2419',
-  },
-  fieldLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2D3C2C',
-  },
-  fieldValue: {
-    fontWeight: '500',
-    color: '#1A2419',
+    textAlign: 'center',
   },
   // Button Styles
   buttonContainer: {
     flexDirection: 'row',
     gap: 12,
-    justifyContent: 'space-between',
+    marginBottom: 20,
   },
   editButton: {
     flex: 1,
@@ -256,23 +383,6 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
-  },
-  // Content Cards Styles
-  contentCardsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  contentCard: {
-    flex: 1,
-    height: 150,
-    backgroundColor: '#AEC3B0',
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
 });
 

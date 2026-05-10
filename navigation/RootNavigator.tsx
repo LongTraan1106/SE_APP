@@ -10,6 +10,8 @@ import DocumentScanResultScreen from '../screens/DocumentScanResultScreen';
 import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import LoadingScreen from '../screens/LoadingScreen';
+import GroupScreen from '../screens/GroupScreen';
+import SearchGroupScreen from '../screens/SearchGroupScreen';
 import { TabScreenWrapper } from './TabScreenWrapper';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -121,6 +123,8 @@ export function RootNavigator() {
         >
           <Stack.Screen name="Camera" component={CameraScreen} />
           <Stack.Screen name="DocumentScanResult" component={DocumentScanResultScreen} />
+          <Stack.Screen name="Groups" component={GroupScreen} />
+          <Stack.Screen name="SearchGroups" component={SearchGroupScreen} />
         </Stack.Group>
       </Stack.Navigator>
     </NavigationContainer>

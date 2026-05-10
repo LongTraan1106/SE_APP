@@ -92,16 +92,18 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-    }
-    buildTypes {
-        debug {
-            signingConfig signingConfigs.debug
-        }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
-            minifyEnabled enableProguardInReleaseBuilds
+            storeFile file('my-release-key.keystore')  // Tên file keystore của bạn
+            storePassword 'setrial2026'               // Password khi tạo keystore
+            keyAlias 'my-key-alias'                     // Alias bạn đặt
+            keyPassword 'setrial2026'                 // Password khi tạo keystore
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release  // Thay đổi từ debug thành release
+            minifyEnabled true
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }

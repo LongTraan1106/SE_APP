@@ -5,6 +5,7 @@ import {
 import React from 'react';
 import { RootNavigator } from './navigation/RootNavigator';
 import { AuthProvider } from './contexts/AuthContext';
+import { GroupProvider } from './contexts/GroupContext';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -17,7 +18,9 @@ function App() {
         translucent={false}
       />
       <AuthProvider>
-        <RootNavigator />
+        <GroupProvider>
+          <RootNavigator />
+        </GroupProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

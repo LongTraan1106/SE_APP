@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
     color: '#344E39',
-    textAlign: 'center',
+    // textAlign: 'center',
     marginBottom: 25,
     letterSpacing: 1,
   },
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     fontSize: 16,
-    color: '#79876E',
+    color: '#344E39',
     fontFamily: 'System',
   },
   passwordContainer: {
@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
     width: width * 0.62,
     paddingVertical: 16,
     fontSize: 16,
-    color: '#79876E',
+    color: '#344E39',
     fontFamily: 'System',
   },
   eyeIcon: {
@@ -350,6 +350,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#344E39',
     fontWeight: '700',
+    textAlign: 'center',
     textDecorationLine: 'underline',
   },
 });
