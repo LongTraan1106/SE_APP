@@ -10,15 +10,18 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import DocumentScanner from '@dariyd/react-native-document-scanner';
+import Pdf from 'react-native-pdf';
 import RNFS from 'react-native-fs';
 import Flashcard_icon from '../assets/icons/flashcard.svg';
 import Summarize_icon from '../assets/icons/doc.svg';
 import Save_icon from '../assets/icons/save.svg';
 import { CustomAlertModal, AlertButton } from '../components/CustomAlertModal';
+import { documentService } from '../services/documentService';
 
 const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GALLERY_HEIGHT = SCREEN_HEIGHT * 0.48;
@@ -28,13 +31,14 @@ function DocumentScanResultScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   
-  const { scannedImages: initialImages = [] } = route.params || {};
+  const { scannedImages: initialImages = [], pdfData } = route.params || {};
   const [images, setImages] = useState<string[]>(initialImages);
   const [currentPage, setCurrentPage] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [imageLoadErrors, setImageLoadErrors] = useState<{[key: number]: string}>({});
   const [imageLoadingStates, setImageLoadingStates] = useState<{[key: number]: boolean}>({});
+  const [pdfPages, setPdfPages] = useState<number>(0);
   const flatListRef = useRef<FlatList>(null);
 
   // Custom Alert Modal State
@@ -58,30 +62,13 @@ function DocumentScanResultScreen() {
     setCurrentPage(page);
   };
 
-  // ============ Mock Functions ============
+  // ============ Real Functions ============
 
   const handleSummarize = async () => {
-    setIsProcessing(true);
-    try {
-      // Simulate API call
-      await new Promise<void>(resolve => setTimeout(resolve, 1500));
-      setAlertConfig({
-        title: '✅ Tóm Tắt',
-        message: 'Đang xử lý tóm tắt tài liệu...\n\n(Tính năng này sẽ gọi backend để xử lý)',
-        icon: '📋',
-        buttons: [
-          {
-            text: 'OK',
-            onPress: () => setAlertModalVisible(false),
-            style: 'default',
-          },
-        ],
-      });
-      setAlertModalVisible(true);
-    } catch (error) {
+    if (!pdfData && images.length === 0) {
       setAlertConfig({
         title: 'Lỗi',
-        message: 'Không thể tóm tắt tài liệu',
+        message: 'Không có tài liệu nào để tóm tắt',
         icon: '❌',
         buttons: [
           {
@@ -91,6 +78,246 @@ function DocumentScanResultScreen() {
           },
         ],
       });
+      setAlertModalVisible(true);
+      return;
+    }
+
+    setIsProcessing(true);
+
+    // Show loading alert
+    setAlertConfig({
+      title: '⏳ Đang xử lý',
+      message: 'Đang trích xuất nội dung từ tài liệu...\nVui lòng chờ trong giây lát',
+      icon: '⏳',
+      buttons: [],
+    });
+    setAlertModalVisible(true);
+
+    try {
+      let allSummaryData: any = {
+        pages: {},
+        full_summary: '',
+        processing_time: '',
+        num_pages: 0,
+      };
+
+      if (pdfData) {
+        // ===== XỬ LÝ PDF =====
+        const pdfFilePath = pdfData.uri.startsWith('file://') 
+          ? pdfData.uri.substring(7) 
+          : pdfData.uri;
+
+        console.log('[Summary Flow] Processing PDF:', pdfFilePath);
+
+        try {
+          const summaryData = await documentService.processOCRAndSummary(pdfFilePath);
+          allSummaryData = summaryData;
+        } catch (pdfError) {
+          const errorMsg = pdfError instanceof Error ? pdfError.message : 'Unknown error';
+          console.error('[Summary Flow] PDF Error:', pdfError);
+          
+          // Re-throw with context
+          if (errorMsg.includes('Text content cannot be empty') || errorMsg.includes('empty')) {
+            throw new Error('Không thể trích xuất nội dung từ PDF. Tài liệu có thể quá mờ hoặc không có nội dung.');
+          }
+          throw pdfError;
+        }
+      } else {
+        // ===== XỬ LÝ MULTIPLE IMAGES =====
+        console.log('[Summary Flow] Processing', images.length, 'images');
+
+        let combinedPages: { [key: string]: string } = {};
+        let combinedFullSummary = '';
+        let totalTime = 0;
+        let successCount = 0;
+        let emptyContentCount = 0;
+        let errorCount = 0;
+
+        for (let i = 0; i < images.length; i++) {
+          const imagePath = images[i].startsWith('file://')
+            ? images[i].substring(7)
+            : images[i];
+
+          console.log(`[Summary Flow] Processing image ${i + 1}/${images.length}`);
+
+          try {
+            const summaryData = await documentService.processOCRAndSummary(imagePath);
+
+            // Gộp kết quả từng trang
+            Object.keys(summaryData.pages).forEach(pageKey => {
+              // Rename page keys để tránh trùng lặp khi có multiple images
+              const newKey = `page_${i + 1}_${pageKey}`;
+              combinedPages[newKey] = summaryData.pages[pageKey];
+            });
+
+            // Gộp full summary
+            if (Object.keys(combinedPages).length > 0) {
+              combinedFullSummary += '\n\n' + '='.repeat(50) + '\n\n';
+            }
+            combinedFullSummary += `--- ẢNH ${i + 1} ---\n`;
+            combinedFullSummary += summaryData.full_summary;
+
+            // Cộng dồn thời gian
+            const timeString = summaryData.processing_time || '0s';
+            const timeMatch = timeString.match(/[\d.]+/);
+            if (timeMatch) {
+              totalTime += parseFloat(timeMatch[0]);
+            }
+
+            successCount++;
+          } catch (imageError) {
+            const errorMsg = imageError instanceof Error ? imageError.message : 'Unknown error';
+            console.error(`[Summary Flow] Error processing image ${i + 1}:`, imageError);
+
+            // Detect empty content error
+            if (errorMsg.includes('Text content cannot be empty') || errorMsg.includes('empty')) {
+              emptyContentCount++;
+              combinedPages[`page_${i + 1}_skipped`] = 
+                '❌ Ảnh này không thể trích xuất nội dung (quá mờ hoặc không có nội dung)';
+            } else {
+              errorCount++;
+              combinedPages[`page_${i + 1}_error`] = 
+                `❌ Lỗi khi xử lý: ${errorMsg}`;
+            }
+          }
+        }
+
+        // Check if all images failed
+        if (successCount === 0) {
+          setAlertModalVisible(false);
+          throw new Error('Không thể trích xuất nội dung từ bất kỳ ảnh nào. Vui lòng quét lại với chất lượng tốt hơn.');
+        }
+
+        // Build summary with metadata about what succeeded/failed
+        let metadataMsg = '';
+        if (successCount > 0 || emptyContentCount > 0 || errorCount > 0) {
+          metadataMsg = `\n\n📊 Kết quả xử lý:\n`;
+          if (successCount > 0) metadataMsg += `✅ Thành công: ${successCount} ảnh\n`;
+          if (emptyContentCount > 0) metadataMsg += `⚠️ Quá mờ/Trống: ${emptyContentCount} ảnh\n`;
+          if (errorCount > 0) metadataMsg += `❌ Lỗi khác: ${errorCount} ảnh\n`;
+        }
+
+        allSummaryData = {
+          pages: combinedPages,
+          full_summary: combinedFullSummary + metadataMsg,
+          processing_time: `${totalTime.toFixed(2)}s`,
+          num_pages: successCount,
+        };
+      }
+
+      console.log('[Summary Flow] Completed! Navigating to SummaryScreen');
+
+      // Đóng loading alert
+      setAlertModalVisible(false);
+
+      // Show partial success warning if applicable
+      if (allSummaryData.num_pages && allSummaryData.num_pages > 0) {
+        const totalFiles = pdfData ? 1 : images.length;
+        const successCount = allSummaryData.num_pages;
+        const failCount = totalFiles - successCount;
+
+        if (failCount > 0) {
+          // Show warning before navigating
+          setAlertConfig({
+            title: '⚠️ Xử lý Không Hoàn Toàn',
+            message: `Chỉ ${successCount}/${totalFiles} ảnh được xử lý thành công.\n\n` +
+              `${failCount} ảnh không thể trích xuất nội dung (quá mờ hoặc không có nội dung).\n\n` +
+              'Bạn có thể:\n' +
+              '• Xem kết quả hiện tại\n' +
+              '• Quét lại để cải thiện chất lượng',
+            icon: '⚠️',
+            buttons: [
+              {
+                text: 'Xem Kết Quả',
+                onPress: () => {
+                  setAlertModalVisible(false);
+                  navigation.navigate('Summary', {
+                    summaryData: allSummaryData,
+                  });
+                },
+                style: 'default',
+              },
+              {
+                text: 'Quét Lại',
+                onPress: () => {
+                  setAlertModalVisible(false);
+                  handleRescan();
+                },
+                style: 'default',
+              },
+            ],
+          });
+          setAlertModalVisible(true);
+        } else {
+          // All succeeded - navigate directly
+          navigation.navigate('Summary', {
+            summaryData: allSummaryData,
+          });
+        }
+      } else {
+        // No successful processing
+        throw new Error('Không thể xử lý bất kỳ ảnh nào. Vui lòng quét lại.');
+      }
+    } catch (error) {
+      console.error('[Summary Error]:', error);
+
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Đã xảy ra lỗi khi tóm tắt tài liệu';
+
+      // Handle specific error: empty text content
+      if (errorMessage.includes('Text content cannot be empty') || errorMessage.includes('empty')) {
+        setAlertConfig({
+          title: '⚠️ Tài liệu không rõ ràng',
+          message: '🔍 Không thể trích xuất nội dung từ tài liệu.\n\n' +
+            'Tài liệu có thể quá mờ, không có nội dung, hoặc định dạng không hỗ trợ.\n\n' +
+            'Vui lòng:\n' +
+            '• Quét lại tài liệu với chất lượng tốt hơn\n' +
+            '• Đảm bảo tài liệu có nội dung rõ ràng',
+          icon: '⚠️',
+          buttons: [
+            {
+              text: 'Quét lại',
+              onPress: () => {
+                setAlertModalVisible(false);
+                handleRescan();
+              },
+              style: 'default',
+            },
+            {
+              text: 'Hủy',
+              onPress: () => setAlertModalVisible(false),
+              style: 'cancel',
+            },
+          ],
+        });
+      } else {
+        // Generic error handling
+        setAlertConfig({
+          title: '❌ Lỗi xử lý',
+          message: `${errorMessage}\n\n` +
+            'Vui lòng:\n' +
+            '• Kiểm tra kết nối mạng\n' +
+            '• Thử lại quá trình\n' +
+            '• Quét lại tài liệu nếu vấn đề vẫn tiếp diễn',
+          icon: '❌',
+          buttons: [
+            {
+              text: 'Quét lại',
+              onPress: () => {
+                setAlertModalVisible(false);
+                handleRescan();
+              },
+              style: 'default',
+            },
+            {
+              text: 'Hủy',
+              onPress: () => setAlertModalVisible(false),
+              style: 'cancel',
+            },
+          ],
+        });
+      }
       setAlertModalVisible(true);
     } finally {
       setIsProcessing(false);
@@ -327,17 +554,122 @@ function DocumentScanResultScreen() {
   };
 
   if (!images || images.length === 0) {
+    if (!pdfData) {
+      return (
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>❌ No documents scanned</Text>
+            <TouchableOpacity
+              style={[styles.button, styles.backButton]}
+              onPress={() => navigation.goBack()}
+            >
+              <Text style={styles.buttonText}>Go Back</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+  }
+
+  // If PDF is provided, show PDF view
+  if (pdfData) {
+    const pdfUri = pdfData.uri.startsWith('file://')
+      ? pdfData.uri
+      : `file://${pdfData.uri}`;
+
     return (
       <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>❌ No documents scanned</Text>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleCancel}>
+            <Text style={styles.cancelButton}>✕</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>PDF Preview</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        {/* PDF Viewer */}
+        <View style={styles.pdfContainer}>
+          <Pdf
+            source={{ uri: pdfUri }}
+            onLoadComplete={(numberOfPages) => {
+              console.log(`PDF has ${numberOfPages} pages`);
+              setPdfPages(numberOfPages);
+            }}
+            onPageChanged={(page) => {
+              setCurrentPage(page - 1);
+            }}
+            onError={(error: any) => {
+              console.error('PDF error:', error);
+              // More detailed error message
+              let errorMsg = 'Không thể tải file PDF';
+              if (error?.message?.includes('permission')) {
+                errorMsg = 'Lỗi quyền truy cập file. Vui lòng kiểm tra quyền của ứng dụng';
+              }
+              Alert.alert('Lỗi', errorMsg);
+            }}
+            style={styles.pdf}
+          />
+        </View>
+
+        {/* Page Indicator for PDF */}
+        {pdfPages > 0 && (
+          <View style={styles.pageIndicatorContainer}>
+            <Text style={styles.pageIndicatorText}>
+              {currentPage + 1} / {pdfPages}
+            </Text>
+          </View>
+        )}
+
+        {/* Info Section */}
+        <View style={styles.infoSection}>
+          <Text style={styles.infoText}>
+            📄 {pdfData.name}
+          </Text>
+          <Text style={styles.infoSubText}>
+            Size: {(pdfData.size / 1024 / 1024).toFixed(2)} MB · {pdfPages} pages
+          </Text>
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionsContainer}>
           <TouchableOpacity
-            style={[styles.button, styles.backButton]}
-            onPress={() => navigation.goBack()}
+            style={[styles.actionButton, styles.summarizeButton, isProcessing && styles.buttonDisabled]}
+            onPress={handleSummarize}
+            disabled={isProcessing}
           >
-            <Text style={styles.buttonText}>Go Back</Text>
+            <Summarize_icon width={24} height={24} style={{ marginBottom: 4 }} />
+            <Text style={styles.actionButtonText}>Summary</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, styles.flashcardButton, isProcessing && styles.buttonDisabled]}
+            onPress={handleCreateFlashcard}
+            disabled={isProcessing}
+          >
+            <Flashcard_icon width={24} height={24} style={{ marginBottom: 4 }} />
+            <Text style={styles.actionButtonText}>Flashcard</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, styles.saveButton, isProcessing && styles.buttonDisabled]}
+            onPress={handleSaveDocument}
+            disabled={isProcessing}
+          >
+            <Save_icon width={24} height={24} style={{ marginBottom: 4 }} />
+            <Text style={styles.actionButtonText}>Save</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Custom Alert Modal */}
+        <CustomAlertModal
+          visible={alertModalVisible}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          icon={alertConfig.icon}
+          buttons={alertConfig.buttons}
+          onDismiss={() => setAlertModalVisible(false)}
+        />
       </View>
     );
   }
@@ -690,6 +1022,22 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 20,
     fontWeight: '600',
+  },
+  pdfContainer: {
+    flex: 1,
+    margin: 10,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  pdf: {
+    flex: 1,
+    backgroundColor: '#f0f0f0',
   },
 });
 

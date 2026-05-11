@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { PERMISSIONS, RESULTS, request } from 'react-native-permissions';
 import DocumentScanner from '@dariyd/react-native-document-scanner';
+import * as DocumentPicker from '@react-native-documents/picker';
 import RNFS from 'react-native-fs';
 import Ideas_icon from '../assets/icons/ideas.svg';
 import Surface_icon from '../assets/icons/surface.svg';
@@ -128,6 +129,74 @@ function CameraScreen() {
       setIsLoading(false);
       console.error('Error scanning document:', error);
       Alert.alert('Lỗi', 'Không thể quét tài liệu: ' + error.message);
+    }
+  };
+
+  // ── Copy file from content URI to app cache ────────────────────────────────
+
+  const copyFileToCache = async (sourceUri: string, fileName: string): Promise<string> => {
+    try {
+      const cacheDir = RNFS.CachesDirectoryPath;
+      const safeFileName = fileName.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+      const destPath = `${cacheDir}/${Date.now()}_${safeFileName}`;
+
+      console.log('Copying file:', { sourceUri, destPath });
+
+      // Use RNFS.copyFile which works with content:// URIs on Android
+      await RNFS.copyFile(sourceUri, destPath);
+
+      const fileUri = `file://${destPath}`;
+      console.log('File copied successfully:', fileUri);
+      return fileUri;
+    } catch (error) {
+      console.error('Error copying file to cache:', error);
+      throw error;
+    }
+  };
+
+  // ── Upload PDF from device ─────────────────────────────────────────────────
+
+  const handleUploadPDF = async () => {
+    try {
+      setIsLoading(true);
+      const result = await DocumentPicker.pick({
+        presentationStyle: 'fullScreen',
+      });
+
+      if (result && result.length > 0) {
+        const pdfFile = result[0];
+        const pdfUri = pdfFile.uri;
+        const pdfName = pdfFile.name || 'document.pdf';
+        const pdfSize = pdfFile.size || 0;
+
+        console.log('PDF picked from picker:', { uri: pdfUri, name: pdfName, size: pdfSize });
+
+        try {
+          // Copy file from content:// to cache
+          const cachedUri = await copyFileToCache(pdfUri, pdfName);
+
+          setIsLoading(false);
+
+          // Navigate with cached file:// URI
+          navigation.navigate('DocumentScanResult', {
+            pdfData: {
+              uri: cachedUri,
+              name: pdfName,
+              size: pdfSize,
+            },
+          });
+        } catch (copyError) {
+          console.error('Error copying file:', copyError);
+          Alert.alert('Lỗi', 'Không thể xử lý file PDF. Vui lòng thử lại.');
+          setIsLoading(false);
+        }
+      }
+    } catch (error: any) {
+      console.error('Error picking PDF:', error);
+      if (error.code !== 'DOCUMENT_PICKER_CANCELLED') {
+        Alert.alert('Lỗi', 'Không thể chọn file PDF. Vui lòng thử lại.');
+      }
+      setIsLoading(false);
     }
   };
 
@@ -252,6 +321,16 @@ function CameraScreen() {
         >
           <Text style={styles.scanButtonText}>
             {isLoading ? '⏳ Processing...' : 'Scan Documents'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.uploadPdfButton, isLoading && styles.scanButtonDisabled]}
+          onPress={handleUploadPDF}
+          disabled={isLoading}
+        >
+          <Text style={styles.uploadPdfButtonText}>
+            {isLoading ? '⏳ Processing...' : 'Upload PDF'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -383,6 +462,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 20,
     backgroundColor: '#F6EFDD',
+    gap: 12,
   },
   scanButton: {
     paddingVertical: 14,
@@ -391,17 +471,36 @@ const styles = StyleSheet.create({
     backgroundColor: '#6B9071',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+    width: '80%',
+  },
+  uploadPdfButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    backgroundColor: '#4A7C59',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    width: '80%',
   },
   scanButtonDisabled: {
     opacity: 0.6,
   },
   scanButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  uploadPdfButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',

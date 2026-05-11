@@ -6,66 +6,146 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import Staricon from '../assets/icons/star.svg';
 import Trashicon from '../assets/icons/trash_can.svg';
+import { documentService, DocumentListItem } from '../services/documentService';
 
 const { width } = Dimensions.get('window');
 
 type TabType = 'recently' | 'search' | 'favourite';
 
 interface Document {
-  id: string;
+  id: number;
   title: string;
-  tags: string[];
+  tags?: string[];
   isFavourite: boolean;
 }
 
 function DocumentsScreen() {
+  const navigation = useNavigation<any>();
   const [activeTab, setActiveTab] = React.useState<TabType>('recently');
+  const [documents, setDocuments] = React.useState<Document[]>([]);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
-  // Mock data - học viên có thể thay đổi dữ liệu theo nhu cầu
-  const documentData: Document[] = [
-    {
-      id: '1',
-      title: 'Machine learning',
-      tags: ['Summary'],
-      isFavourite: false,
-    },
-    {
-      id: '2',
-      title: 'Basic ReactJS',
-      tags: ['Summary', 'Flashcard'],
-      isFavourite: false,
-    },
-    {
-      id: '3',
-      title: 'JavaScript Advanced',
-      tags: [],
-      isFavourite: false,
-    },
-    {
-      id: '4',
-      title: 'Web Development',
-      tags: ['Flashcard'],
-      isFavourite: false,
-    },
-    {
-      id: '5',
-      title: 'Python Basics',
-      tags: ['Summary'],
-      isFavourite: false,
-    },
-  ];
+  // Load documents when component mounts
+  React.useEffect(() => {
+    loadDocuments();
+  }, []);
 
-  const handleDeleteDocument = (id: string) => {
-    console.log('Delete document:', id);
-    // TODO: Thêm logic xóa document
+  // Reload documents when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('[Documents Screen] Screen focused, reloading documents');
+      loadDocuments();
+      return () => {
+        // Cleanup if needed
+      };
+    }, [])
+  );
+
+  const loadDocuments = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      console.log('[Documents Screen] Loading documents...');
+      const docs = await documentService.getDocuments();
+      
+      // Transform API response to UI format
+      const transformedDocs: Document[] = docs.map(doc => ({
+        id: doc.id,
+        title: doc.title,
+        tags: doc.tags || [],
+        isFavourite: doc.is_favorite,
+      }));
+
+      // Sort by date (newest first)
+      transformedDocs.sort((a, b) => b.id - a.id);
+
+      setDocuments(transformedDocs);
+      console.log('[Documents Screen] Loaded', transformedDocs.length, 'documents');
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Không thể tải tài liệu';
+      setError(errorMsg);
+      console.error('[Documents Screen] Error loading documents:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleToggleFavourite = (id: string) => {
-    console.log('Toggle favourite:', id);
-    // TODO: Thêm logic toggle yêu thích
+  const getFilteredDocuments = (): Document[] => {
+    switch (activeTab) {
+      case 'favourite':
+        return documents.filter(doc => doc.isFavourite);
+      case 'search':
+        // TODO: Implement search functionality
+        return documents;
+      case 'recently':
+      default:
+        return documents;
+    }
+  };
+
+  const handleDeleteDocument = async (id: number) => {
+    Alert.alert(
+      'Xóa Tài Liệu',
+      'Bạn có chắc muốn xóa tài liệu này?',
+      [
+        {
+          text: 'Hủy',
+          onPress: () => {},
+          style: 'cancel',
+        },
+        {
+          text: 'Xóa',
+          onPress: async () => {
+            try {
+              console.log('[Documents Screen] Deleting document', id);
+              await documentService.deleteDocument(id);
+              
+              // Remove from local state
+              setDocuments(docs => docs.filter(doc => doc.id !== id));
+              Alert.alert('Thành công', 'Tài liệu đã được xóa');
+            } catch (error) {
+              const errorMsg = error instanceof Error ? error.message : 'Lỗi xóa tài liệu';
+              Alert.alert('Lỗi', errorMsg);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  };
+
+  const handleToggleFavourite = async (id: number) => {
+    try {
+      const doc = documents.find(d => d.id === id);
+      if (!doc) return;
+
+      const newFavoriteStatus = !doc.isFavourite;
+      console.log('[Documents Screen] Toggling favorite for', id);
+      
+      await documentService.toggleFavorite(id, newFavoriteStatus);
+
+      // Update local state
+      setDocuments(docs =>
+        docs.map(d =>
+          d.id === id ? { ...d, isFavourite: newFavoriteStatus } : d
+        )
+      );
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Lỗi cập nhật yêu thích';
+      Alert.alert('Lỗi', errorMsg);
+    }
+  };
+
+  const handleOpenDocument = (documentId: number) => {
+    console.log('[Documents Screen] Opening document', documentId);
+    navigation.navigate('DocumentDetails', { documentId });
   };
 
   return (
@@ -110,17 +190,52 @@ function DocumentsScreen() {
         {/* Divider */}
         <View style={styles.divider} />
 
+        {/* Loading State */}
+        {isLoading && (
+          <View style={styles.centerContent}>
+            <ActivityIndicator size="large" color="#6B9071" />
+            <Text style={styles.loadingText}>Đang tải tài liệu...</Text>
+          </View>
+        )}
+
+        {/* Error State */}
+        {error && !isLoading && (
+          <View style={styles.centerContent}>
+            <Text style={styles.errorText}>❌ {error}</Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={loadDocuments}
+            >
+              <Text style={styles.retryButtonText}>Thử Lại</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Empty State */}
+        {!isLoading && !error && getFilteredDocuments().length === 0 && (
+          <View style={styles.centerContent}>
+            <Text style={styles.emptyText}>
+              {activeTab === 'favourite'
+                ? '📭 Chưa có tài liệu yêu thích'
+                : '📭 Chưa có tài liệu nào'}
+            </Text>
+          </View>
+        )}
+
         {/* Documents List */}
-        <View style={styles.documentsContainer}>
-          {documentData.map(doc => (
-            <DocumentItem
-              key={doc.id}
-              document={doc}
-              onDelete={() => handleDeleteDocument(doc.id)}
-              onToggleFavourite={() => handleToggleFavourite(doc.id)}
-            />
-          ))}
-        </View>
+        {!isLoading && !error && getFilteredDocuments().length > 0 && (
+          <View style={styles.documentsContainer}>
+            {getFilteredDocuments().map(doc => (
+              <DocumentItem
+                key={doc.id}
+                document={doc}
+                onPress={() => handleOpenDocument(doc.id)}
+                onDelete={() => handleDeleteDocument(doc.id)}
+                onToggleFavourite={() => handleToggleFavourite(doc.id)}
+              />
+            ))}
+          </View>
+        )}
 
         {/* Extra space for bottom nav */}
         <View style={styles.bottomSpace} />
@@ -132,51 +247,68 @@ function DocumentsScreen() {
 // ===== DOCUMENT ITEM COMPONENT =====
 interface DocumentItemProps {
   document: Document;
+  onPress: () => void;
   onDelete: () => void;
   onToggleFavourite: () => void;
 }
 
 function DocumentItem({
   document,
+  onPress,
   onDelete,
   onToggleFavourite,
 }: DocumentItemProps) {
   return (
-    <View style={styles.documentItem}>
-      {/* Left Content */}
-      <View style={styles.documentContent}>
-        <Text style={styles.documentTitle}>{document.title}</Text>
-        {document.tags.length > 0 && (
-          <View style={styles.tagsContainer}>
-            {document.tags.map((tag, index) => (
-              <View key={index} style={styles.tag}>
-                <Text style={styles.tagText}>{tag}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
+    <TouchableOpacity 
+      style={styles.documentItemContainer}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.documentItem}>
+        {/* Left Content */}
+        <View style={styles.documentContent}>
+          <Text style={styles.documentTitle}>{document.title}</Text>
+          {document.tags.length > 0 && (
+            <View style={styles.tagsContainer}>
+              {document.tags.map((tag, index) => (
+                <View key={index} style={styles.tag}>
+                  <Text style={styles.tagText}>{tag}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
 
-      {/* Right Actions */}
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={onToggleFavourite}
-        >
-            <Staricon
+        {/* Right Actions */}
+        <View style={styles.actionsContainer}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              onToggleFavourite();
+            }}
+          >
+              <Staricon
+                width={20}
+                height={20}
+              />
+
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+          >
+            <Trashicon
               width={20}
               height={20}
             />
-
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton} onPress={onDelete}>
-          <Trashicon
-            width={20}
-            height={20}
-          />
-        </TouchableOpacity>
+          </TouchableOpacity>
+        </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -267,6 +399,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
   },
 
+  // Document Item Container (TouchableOpacity wrapper)
+  documentItemContainer: {
+    width: '100%',
+  },
+
   // Document Item
   documentItem: {
     flexDirection: 'row',
@@ -327,6 +464,42 @@ const styles = StyleSheet.create({
   // Bottom Space
   bottomSpace: {
     height: 20,
+  },
+  // Loading and Error States
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 200,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 10,
+    fontWeight: '500',
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#d32f2f',
+    fontWeight: '600',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#999',
+    fontWeight: '500',
+  },
+  retryButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#6B9071',
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });
 

@@ -7,6 +7,8 @@ import DocumentsScreen from '../screens/DocumentsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import CameraScreen from '../screens/CameraScreen';
 import DocumentScanResultScreen from '../screens/DocumentScanResultScreen';
+import SummaryScreen from '../screens/SummaryScreen';
+import DocumentDetailsScreen from '../screens/DocumentDetailsScreen';
 import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import LoadingScreen from '../screens/LoadingScreen';
@@ -123,6 +125,8 @@ export function RootNavigator() {
         >
           <Stack.Screen name="Camera" component={CameraScreen} />
           <Stack.Screen name="DocumentScanResult" component={DocumentScanResultScreen} />
+          <Stack.Screen name="Summary" component={SummaryScreen} />
+          <Stack.Screen name="DocumentDetails" component={DocumentDetailsScreen} />
           <Stack.Screen name="Groups" component={GroupScreen} />
           <Stack.Screen name="SearchGroups" component={SearchGroupScreen} />
         </Stack.Group>
