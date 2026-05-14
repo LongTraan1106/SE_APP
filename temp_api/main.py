@@ -7,7 +7,7 @@ from routers import document_router, group_router
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = "DATABASE_URL"
 
 db_pool = None
 
