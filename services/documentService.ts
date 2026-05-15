@@ -11,38 +11,74 @@ const API_URL = 'https://api.mealsretrieval.site';
 export interface OCRResponse {
   success: boolean;
   message: string;
-  data: {
-    extracted_text: string;
-    file_name: string;
-    processing_time: string;
-    text_length: number;
-  };
+  data: OCRData;
+}
+
+export interface OCRBlock {
+  page: number;
+  group_idx: number;
+  box_idx: number;
+  label: string;
+  coordinate: number[];
+  ocr_text: string;
+}
+
+export interface FlashcardQA {
+  question: string;
+  answer: string;
+}
+
+export interface FlashcardBlock extends OCRBlock {
+  flashcards: FlashcardQA[];
+  flashcard_raw_output?: string;
+}
+
+export interface FlashcardProcessData {
+  flashcard_data: FlashcardBlock[];
+  total_cards: number;
+  num_blocks: number;
+  processing_time: string;
+}
+
+export interface OCRData {
+  ocr_results: OCRBlock[];
+  extracted_text: string;
+  file_name: string;
+  processing_time: string;
+  text_length: number;
+  num_blocks: number;
 }
 
 export interface SummaryResponse {
   success: boolean;
   message: string;
-  data: {
-    pages: { [key: string]: string };
-    full_summary: string;
-    processing_time: string;
-    num_pages: number;
-  };
+  data: SummaryData;
+}
+
+export interface SummaryData {
+  pages: { [key: string]: string };
+  full_summary: string;
+  structured_summary?: Array<OCRBlock & { summary?: string }> | null;
+  processing_time: string;
+  num_pages: number;
+}
+
+export interface ProcessedDocumentData {
+  ocrData: OCRData;
+  summaryData: SummaryData;
 }
 
 export interface DocumentResponse {
   success: boolean;
   message: string;
-  data: {
-    id: number;
-    user_id: number;
-    title: string;
-    summary_data: {
-      pages: { [key: string]: string };
-      full_summary: string;
-      processing_time: string;
-      num_pages: number;
-    };
+    data: {
+      id: number;
+      user_id: number;
+      title: string;
+      source_file_name?: string | null;
+      ocr_data?: OCRData | null;
+      extracted_text?: string | null;
+      summary_data: SummaryData;
     tags?: string[];
     is_favorite: boolean;
     created_at: string;
@@ -53,6 +89,7 @@ export interface DocumentResponse {
 export interface DocumentListItem {
   id: number;
   title: string;
+  source_file_name?: string | null;
   tags?: string[];
   is_favorite: boolean;
   created_at: string;
@@ -64,6 +101,70 @@ export interface DocumentListResponse {
   data: DocumentListItem[];
 }
 
+export interface DocumentTitleResponse {
+  success: boolean;
+  message: string;
+  data: {
+    title: string;
+  };
+}
+
+export interface FlashcardSet {
+  id: number;
+  user_id: number;
+  document_id?: number | null;
+  title: string;
+  source_file_name?: string | null;
+  flashcard_data: FlashcardBlock[];
+  total_cards: number;
+  tags?: string[];
+  is_favorite: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FlashcardListItem {
+  id: number;
+  document_id?: number | null;
+  title: string;
+  source_file_name?: string | null;
+  total_cards: number;
+  tags?: string[];
+  is_favorite: boolean;
+  created_at: string;
+}
+
+export interface FlashcardProcessResponse {
+  success: boolean;
+  message: string;
+  data: FlashcardProcessData;
+}
+
+export interface FlashcardSetResponse {
+  success: boolean;
+  message: string;
+  data: FlashcardSet;
+}
+
+export interface FlashcardListResponse {
+  success: boolean;
+  message: string;
+  data: FlashcardListItem[];
+}
+
+const getApiErrorMessage = (responseData: any, fallback: string) =>
+  responseData?.message || responseData?.detail || fallback;
+
+const countValidFlashcards = (flashcardData: FlashcardBlock[] = []) =>
+  flashcardData.reduce(
+    (total, block) =>
+      total +
+      (block.flashcards || []).filter(
+        card => card.question?.trim() && card.answer?.trim()
+      ).length,
+    0
+  );
+
 class DocumentService {
   /**
    * Process OCR - Upload file (ảnh/PDF) và trích xuất text
@@ -74,7 +175,7 @@ class DocumentService {
   async processOCR(
     filePath: string,
     centerTolerance: number = 50
-  ): Promise<string> {
+  ): Promise<OCRData> {
     try {
       const accessToken = await storageService.getAccessToken();
       
@@ -151,7 +252,7 @@ class DocumentService {
 
       console.log(`[OCR] Success! Extracted text length: ${ocrData.data.text_length}`);
       
-      return ocrData.data.extracted_text;
+      return ocrData.data;
     } catch (error) {
       console.error('[OCR Error]:', error);
       throw error;
@@ -166,7 +267,7 @@ class DocumentService {
    * @returns summary data (pages + full_summary)
    */
   async processSummary(
-    textContent: string,
+    input: OCRData | string,
     llmEndpoint?: string,
     modelName?: string
   ): Promise<SummaryResponse['data']> {
@@ -177,14 +278,23 @@ class DocumentService {
         throw new Error('Unauthorized: No access token found');
       }
 
-      if (!textContent || textContent.trim().length === 0) {
-        throw new Error('Text content cannot be empty');
+      const isLegacyText = typeof input === 'string';
+      const textContent = isLegacyText ? input : input.extracted_text;
+      const ocrResults = isLegacyText ? undefined : input.ocr_results;
+
+      if (
+        (!ocrResults || ocrResults.length === 0) &&
+        (!textContent || textContent.trim().length === 0)
+      ) {
+        throw new Error('OCR content cannot be empty');
       }
 
-      console.log('[Summary] Processing text...');
+      console.log('[Summary] Processing OCR result...');
 
       const payload: any = {
-        text_content: textContent,
+        ...(ocrResults && ocrResults.length > 0
+          ? { ocr_results: ocrResults }
+          : { text_content: textContent }),
       };
 
       if (llmEndpoint) {
@@ -224,19 +334,22 @@ class DocumentService {
    * @param filePath - đường dẫn file để xử lý
    * @returns summary data
    */
-  async processOCRAndSummary(filePath: string): Promise<SummaryResponse['data']> {
+  async processOCRAndSummary(filePath: string): Promise<ProcessedDocumentData> {
     try {
       console.log('[Document Processing] Starting OCR + Summary flow...');
 
       // Step 1: OCR
-      const extractedText = await this.processOCR(filePath);
+      const ocrData = await this.processOCR(filePath);
 
       // Step 2: Summary
-      const summaryData = await this.processSummary(extractedText);
+      const summaryData = await this.processSummary(ocrData);
 
       console.log('[Document Processing] Complete!');
 
-      return summaryData;
+      return {
+        ocrData,
+        summaryData,
+      };
     } catch (error) {
       console.error('[Document Processing Error]:', error);
       throw error;
@@ -246,6 +359,215 @@ class DocumentService {
   /**
    * Xác định MIME type từ file extension
    */
+  async processFlashcards(ocrData: OCRData): Promise<FlashcardProcessData> {
+    try {
+      const accessToken = await storageService.getAccessToken();
+
+      if (!accessToken) {
+        throw new Error('Unauthorized: No access token found');
+      }
+
+      if (!ocrData.ocr_results || ocrData.ocr_results.length === 0) {
+        throw new Error('OCR results cannot be empty');
+      }
+
+      const response = await fetch(`${API_URL}/api/flashcards/process`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          ocr_results: ocrData.ocr_results,
+        }),
+      });
+
+      const processResponse: FlashcardProcessResponse = await response.json();
+
+      if (!response.ok || !processResponse.success) {
+        throw new Error(getApiErrorMessage(processResponse, 'Failed to create flashcards'));
+      }
+
+      if (
+        !processResponse.data ||
+        processResponse.data.total_cards <= 0 ||
+        countValidFlashcards(processResponse.data.flashcard_data) <= 0
+      ) {
+        throw new Error('LLM did not return any valid flashcards. Please try again with a clearer document.');
+      }
+
+      return processResponse.data;
+    } catch (error) {
+      console.error('[Flashcard Process Error]:', error);
+      throw error;
+    }
+  }
+
+  async saveFlashcardSet(
+    title: string,
+    flashcardData: FlashcardBlock[],
+    options?: {
+      documentId?: number | null;
+      sourceFileName?: string | null;
+      tags?: string[];
+    }
+  ): Promise<FlashcardSet> {
+    try {
+      const accessToken = await storageService.getAccessToken();
+
+      if (!accessToken) {
+        throw new Error('Unauthorized: No access token found');
+      }
+
+      if (!title || title.trim().length === 0) {
+        throw new Error('Flashcard title cannot be empty');
+      }
+
+      if (!flashcardData || countValidFlashcards(flashcardData) <= 0) {
+        throw new Error('Cannot save an empty flashcard set');
+      }
+
+      const payload = {
+        title: title.trim(),
+        document_id: options?.documentId ?? undefined,
+        source_file_name: options?.sourceFileName ?? undefined,
+        flashcard_data: flashcardData,
+        tags: options?.tags || ['Flashcard'],
+      };
+
+      const response = await fetch(`${API_URL}/api/flashcards/save?access_token=${encodeURIComponent(accessToken)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const saveResponse: FlashcardSetResponse = await response.json();
+
+      if (!response.ok || !saveResponse.success) {
+        throw new Error(getApiErrorMessage(saveResponse, 'Failed to save flashcards'));
+      }
+
+      return saveResponse.data;
+    } catch (error) {
+      console.error('[Flashcard Save Error]:', error);
+      throw error;
+    }
+  }
+
+  async getFlashcardSets(documentId?: number): Promise<FlashcardListItem[]> {
+    try {
+      const accessToken = await storageService.getAccessToken();
+
+      if (!accessToken) {
+        throw new Error('Unauthorized: No access token found');
+      }
+
+      const documentQuery = documentId ? `&document_id=${encodeURIComponent(documentId)}` : '';
+      const response = await fetch(`${API_URL}/api/flashcards/list?access_token=${encodeURIComponent(accessToken)}${documentQuery}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const listResponse: FlashcardListResponse = await response.json();
+
+      if (!response.ok || !listResponse.success) {
+        throw new Error(getApiErrorMessage(listResponse, 'Failed to fetch flashcards'));
+      }
+
+      return listResponse.data || [];
+    } catch (error) {
+      console.error('[Flashcard List Error]:', error);
+      throw error;
+    }
+  }
+
+  async getFlashcardDetail(flashcardId: number): Promise<FlashcardSet> {
+    try {
+      const accessToken = await storageService.getAccessToken();
+
+      if (!accessToken) {
+        throw new Error('Unauthorized: No access token found');
+      }
+
+      const response = await fetch(`${API_URL}/api/flashcards/${flashcardId}?access_token=${encodeURIComponent(accessToken)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const detailResponse: FlashcardSetResponse = await response.json();
+
+      if (!response.ok || !detailResponse.success) {
+        throw new Error(getApiErrorMessage(detailResponse, 'Failed to fetch flashcard detail'));
+      }
+
+      return detailResponse.data;
+    } catch (error) {
+      console.error('[Flashcard Detail Error]:', error);
+      throw error;
+    }
+  }
+
+  async toggleFlashcardFavorite(flashcardId: number, isFavorite: boolean): Promise<void> {
+    try {
+      const accessToken = await storageService.getAccessToken();
+
+      if (!accessToken) {
+        throw new Error('Unauthorized: No access token found');
+      }
+
+      const response = await fetch(`${API_URL}/api/flashcards/${flashcardId}/favorite?access_token=${encodeURIComponent(accessToken)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          is_favorite: isFavorite,
+        }),
+      });
+
+      const toggleResponse = await response.json();
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(toggleResponse, 'Failed to update flashcard favorite'));
+      }
+    } catch (error) {
+      console.error('[Flashcard Favorite Error]:', error);
+      throw error;
+    }
+  }
+
+  async deleteFlashcardSet(flashcardId: number): Promise<void> {
+    try {
+      const accessToken = await storageService.getAccessToken();
+
+      if (!accessToken) {
+        throw new Error('Unauthorized: No access token found');
+      }
+
+      const response = await fetch(`${API_URL}/api/flashcards/${flashcardId}?access_token=${encodeURIComponent(accessToken)}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const deleteResponse = await response.json();
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(deleteResponse, 'Failed to delete flashcard set'));
+      }
+    } catch (error) {
+      console.error('[Flashcard Delete Error]:', error);
+      throw error;
+    }
+  }
+
   private getMimeType(filePath: string): string {
     const ext = filePath.split('.').pop()?.toLowerCase() || '';
     
@@ -268,7 +590,8 @@ class DocumentService {
    */
   async saveDocument(
     title: string,
-    summaryData: SummaryResponse['data'],
+    summaryData: SummaryData,
+    ocrData?: OCRData | null,
     tags?: string[]
   ): Promise<DocumentResponse['data']> {
     try {
@@ -286,6 +609,9 @@ class DocumentService {
 
       const payload = {
         title: title.trim(),
+        ocr_data: ocrData || undefined,
+        source_file_name: ocrData?.file_name,
+        extracted_text: ocrData?.extracted_text,
         summary_data: summaryData,
         tags: tags || [],
       };
@@ -309,6 +635,37 @@ class DocumentService {
       return saveResponse.data;
     } catch (error) {
       console.error('[Document Save Error]:', error);
+      throw error;
+    }
+  }
+
+  async generateDocumentTitle(summaryData: SummaryData): Promise<string> {
+    try {
+      const accessToken = await storageService.getAccessToken();
+
+      if (!accessToken) {
+        throw new Error('Unauthorized: No access token found');
+      }
+
+      const response = await fetch(`${API_URL}/api/documents/generate-title?access_token=${encodeURIComponent(accessToken)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          summary_data: summaryData,
+        }),
+      });
+
+      const titleResponse: DocumentTitleResponse = await response.json();
+
+      if (!response.ok || !titleResponse.success) {
+        throw new Error(getApiErrorMessage(titleResponse, 'Failed to generate document title'));
+      }
+
+      return titleResponse.data.title || 'Scanned Document';
+    } catch (error) {
+      console.error('[Document Title Error]:', error);
       throw error;
     }
   }

@@ -30,7 +30,7 @@ export function CustomAlertModal({
   title,
   message,
   buttons,
-  icon = '⚠️',
+  icon = '!',
   isLoading = false,
   onDismiss,
 }: CustomAlertModalProps) {

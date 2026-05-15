@@ -1,41 +1,40 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Dimensions,
-  FlatList,
   ActivityIndicator,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
   TextInput,
-  Alert,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CustomAlertModal, AlertButton } from '../components/CustomAlertModal';
-import { documentService } from '../services/documentService';
+import {
+  documentService,
+  DocumentResponse,
+  OCRData,
+  SummaryData,
+} from '../services/documentService';
 
 const { width } = Dimensions.get('window');
 
-interface SummaryData {
-  pages: { [key: string]: string };
-  full_summary: string;
-  processing_time: string;
-  num_pages: number;
-}
+type PendingAction = 'saveDocument' | 'createFlashcard' | null;
 
 function SummaryScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const scrollViewRef = useRef<ScrollView>(null);
 
-  const { summaryData }: { summaryData: SummaryData } = route.params || {};
+  const {
+    summaryData,
+    ocrData,
+  }: { summaryData: SummaryData; ocrData?: OCRData } = route.params || {};
 
   const [alertModalVisible, setAlertModalVisible] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [documentTitle, setDocumentTitle] = useState('');
-  const [showTitleInput, setShowTitleInput] = useState(false);
   const [alertConfig, setAlertConfig] = useState<{
     title: string;
     message: string;
@@ -44,24 +43,84 @@ function SummaryScreen() {
   }>({
     title: '',
     message: '',
-    icon: '⚠️',
+    icon: '!',
     buttons: [],
   });
+  const [documentTitle, setDocumentTitle] = useState('');
+  const [showTitleInput, setShowTitleInput] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [savedDocument, setSavedDocument] = useState<DocumentResponse['data'] | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isCreatingFlashcards, setIsCreatingFlashcards] = useState(false);
+  const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
 
-  const scrollViewRef = useRef<ScrollView>(null);
+  const isBusy = isSaving || isCreatingFlashcards || isGeneratingTitle;
 
   const handleBack = () => {
     navigation.goBack();
   };
 
-  const handleCreateFlashcard = () => {
+  const getDefaultTitle = () => {
+    if (documentTitle.trim()) {
+      return documentTitle.trim();
+    }
+
+    if (ocrData?.file_name) {
+      return ocrData.file_name.replace(/\.[^/.]+$/, '');
+    }
+
+    return `Summary ${new Date().toLocaleDateString()}`;
+  };
+
+  const requestTitleForAction = async (action: Exclude<PendingAction, null>) => {
+    setPendingAction(action);
+    if (!documentTitle.trim()) {
+      setShowTitleInput(true);
+      setIsGeneratingTitle(true);
+      try {
+        const generatedTitle = await documentService.generateDocumentTitle(summaryData);
+        setDocumentTitle(generatedTitle || getDefaultTitle());
+      } catch (error) {
+        setDocumentTitle(getDefaultTitle());
+      } finally {
+        setIsGeneratingTitle(false);
+      }
+      return;
+    }
+    setShowTitleInput(true);
+  };
+
+  const ensureDocumentSaved = async (title: string): Promise<DocumentResponse['data']> => {
+    if (savedDocument) {
+      return savedDocument;
+    }
+
+    const savedDoc = await documentService.saveDocument(
+      title,
+      summaryData,
+      ocrData || null,
+      ['Summary']
+    );
+    setSavedDocument(savedDoc);
+    return savedDoc;
+  };
+
+  const showSavedDocumentAlert = (savedDoc: DocumentResponse['data']) => {
     setAlertConfig({
-      title: '✅ Tạo Flashcard',
-      message: 'Tính năng này sẽ sớm được cập nhật!\n\nBạn có thể sử dụng nội dung tóm tắt trên để tạo flashcard thủ công.',
-      icon: '🎴',
+      title: 'Saved',
+      message: `"${savedDoc.title}" has been saved.`,
+      icon: 'OK',
       buttons: [
         {
-          text: 'OK',
+          text: 'View Documents',
+          onPress: () => {
+            setAlertModalVisible(false);
+            navigation.navigate('TabNavigator', { screen: 'Documents' });
+          },
+          style: 'default',
+        },
+        {
+          text: 'Stay Here',
           onPress: () => setAlertModalVisible(false),
           style: 'default',
         },
@@ -71,75 +130,29 @@ function SummaryScreen() {
   };
 
   const handleSaveDocument = async () => {
-    // Nếu chưa nhập title, hiển thị input modal
-    if (!documentTitle.trim()) {
-      setShowTitleInput(true);
+    const title = documentTitle.trim();
+    if (!title) {
+      requestTitleForAction('saveDocument');
       return;
     }
 
     setIsSaving(true);
     try {
-      console.log('[Summary Flow] Saving document with title:', documentTitle);
-      
-      // Gọi API để lưu document
-      const savedDoc = await documentService.saveDocument(
-        documentTitle,
-        summaryData,
-        ['Summary'] // Default tag
-      );
-
-      console.log('[Summary Flow] Document saved successfully:', savedDoc.id);
-
-      // Reset states trước khi show alert
+      const savedDoc = await ensureDocumentSaved(title);
       setShowTitleInput(false);
-      setDocumentTitle('');
-
-      setAlertConfig({
-        title: '✅ Lưu Thành Công',
-        message: `Tài liệu "${savedDoc.title}" đã được lưu!`,
-        icon: '💾',
-        buttons: [
-          {
-            text: 'Xem Tài Liệu',
-            onPress: () => {
-              setAlertModalVisible(false);
-              // Navigate to Documents tab screen
-              navigation.navigate('TabNavigator', { screen: 'Documents' });
-            },
-            style: 'default',
-          },
-          {
-            text: 'Quay Lại',
-            onPress: () => {
-              setAlertModalVisible(false);
-              // Stay on SummaryScreen - just close alert
-            },
-            style: 'default',
-          },
-        ],
-      });
-      setAlertModalVisible(true);
+      setPendingAction(null);
+      showSavedDocumentAlert(savedDoc);
     } catch (error) {
-      console.error('[Summary Flow] Error saving document:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Lỗi không xác định';
-      
+      const message = error instanceof Error ? error.message : 'Cannot save document';
       setAlertConfig({
-        title: '❌ Lỗi Lưu',
-        message: `Không thể lưu tài liệu: ${errorMessage}`,
-        icon: '❌',
+        title: 'Save Failed',
+        message,
+        icon: '!',
         buttons: [
           {
-            text: 'Thử Lại',
-            onPress: () => {
-              setAlertModalVisible(false);
-              handleSaveDocument();
-            },
-            style: 'default',
-          },
-          {
-            text: 'Hủy',
+            text: 'OK',
             onPress: () => setAlertModalVisible(false),
-            style: 'cancel',
+            style: 'default',
           },
         ],
       });
@@ -149,8 +162,80 @@ function SummaryScreen() {
     }
   };
 
-  // Tách pages thành array
-  const pagesArray = summaryData && summaryData.pages
+  const handleCreateFlashcard = async () => {
+    const title = documentTitle.trim();
+    if (!title) {
+      requestTitleForAction('createFlashcard');
+      return;
+    }
+
+    if (!ocrData || !ocrData.ocr_results?.length) {
+      setAlertConfig({
+        title: 'Cannot Create Flashcards',
+        message: 'OCR data is missing. Please scan or summarize this document again.',
+        icon: '!',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => setAlertModalVisible(false),
+            style: 'default',
+          },
+        ],
+      });
+      setAlertModalVisible(true);
+      return;
+    }
+
+    setIsCreatingFlashcards(true);
+    setIsSaving(true);
+    try {
+      const savedDoc = await ensureDocumentSaved(title);
+      setShowTitleInput(false);
+      setPendingAction(null);
+
+      const processed = await documentService.processFlashcards(ocrData);
+      navigation.navigate('FlashcardDetail', {
+        title: `Flashcards - ${savedDoc.title}`,
+        draftFlashcardData: processed.flashcard_data,
+        draftTotalCards: processed.total_cards,
+        saveOptions: {
+          documentId: savedDoc.id,
+          sourceFileName: savedDoc.source_file_name || ocrData.file_name,
+          tags: ['Flashcard'],
+        },
+        sourceFlow: 'summary',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Cannot create flashcards';
+      setAlertConfig({
+        title: 'Error',
+        message,
+        icon: '!',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => setAlertModalVisible(false),
+            style: 'default',
+          },
+        ],
+      });
+      setAlertModalVisible(true);
+    } finally {
+      setIsSaving(false);
+      setIsCreatingFlashcards(false);
+    }
+  };
+
+  const handleConfirmTitle = () => {
+    if (pendingAction === 'createFlashcard') {
+      handleCreateFlashcard();
+      return;
+    }
+
+    handleSaveDocument();
+  };
+
+  const pagesArray = summaryData?.pages
     ? Object.entries(summaryData.pages).map(([key, value]) => ({
         pageKey: key,
         content: value,
@@ -161,7 +246,7 @@ function SummaryScreen() {
     return (
       <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>❌ Không có dữ liệu tóm tắt</Text>
+          <Text style={styles.errorText}>No summary data available</Text>
         </View>
       </View>
     );
@@ -169,122 +254,130 @@ function SummaryScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleBack}>
-          <Text style={styles.backButton}>‹ BACK</Text>
+          <Text style={styles.backButton}>{'< BACK'}</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>SUMMARY</Text>
-        <View style={{ width: 60 }} />
+        <View style={{ width: 72 }} />
       </View>
 
-      {/* Content Area - Summary List */}
       <ScrollView
         ref={scrollViewRef}
         style={styles.contentArea}
-        showsVerticalScrollIndicator={true}
+        showsVerticalScrollIndicator
       >
         <View style={styles.contentInner}>
           {pagesArray.length > 0 ? (
             <>
               {pagesArray.map((page, index) => (
                 <View key={index} style={styles.pageSection}>
-                  <Text style={styles.pageTitle}>
-                    📄 {page.pageKey.toUpperCase()}
-                  </Text>
-                  <Text style={styles.pageContent}>
-                    {page.content}
-                  </Text>
+                  <Text style={styles.pageTitle}>{page.pageKey.toUpperCase()}</Text>
+                  <Text style={styles.pageContent}>{page.content}</Text>
                 </View>
               ))}
 
-              {/* Processing Time Info */}
               <View style={styles.infoBox}>
-                <Text style={styles.infoText}>
-                  ⏱️ Thời gian xử lý: {summaryData.processing_time}
-                </Text>
-                <Text style={styles.infoText}>
-                  📊 Số trang: {summaryData.num_pages}
-                </Text>
+                <Text style={styles.infoText}>Processing time: {summaryData.processing_time}</Text>
+                <Text style={styles.infoText}>Pages: {summaryData.num_pages}</Text>
+                {ocrData ? (
+                  <Text style={styles.infoText}>
+                    OCR blocks: {ocrData.num_blocks ?? ocrData.ocr_results?.length ?? 0}
+                  </Text>
+                ) : null}
               </View>
             </>
           ) : (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Không có nội dung tóm tắt</Text>
+              <Text style={styles.emptyText}>No summary content</Text>
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* Bookmark Section */}
-      <View style={styles.bookmarkSection}>
-        <Text style={styles.bookmarkIcon}>🔖</Text>
-      </View>
-
-      {/* Action Buttons */}
       <View style={styles.actionsContainer}>
         <TouchableOpacity
           style={[styles.actionButton, styles.backActionButton]}
           onPress={handleBack}
+          disabled={isBusy}
         >
-          <Text style={styles.actionButtonText}>‹ BACK</Text>
+          <Text style={styles.actionButtonText}>{'< BACK'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.actionButton, styles.flashcardButton]}
+          style={[styles.actionButton, styles.flashcardButton, isBusy && styles.buttonDisabled]}
           onPress={handleCreateFlashcard}
+          disabled={isBusy}
         >
-          <Text style={styles.actionButtonText}>FLASHCARD ›</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Secondary Action */}
-      <View style={styles.secondaryActionsContainer}>
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={handleSaveDocument}
-          disabled={isSaving}
-        >
-          {isSaving ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+          {isCreatingFlashcards ? (
+            <ActivityIndicator size="small" color="#344E39" />
           ) : (
-            <Text style={styles.secondaryButtonText}>💾 Save Document</Text>
+            <Text style={styles.actionButtonText}>FLASHCARD {'>'}</Text>
           )}
         </TouchableOpacity>
       </View>
 
-      {/* Title Input Modal */}
+      <View style={styles.secondaryActionsContainer}>
+        <TouchableOpacity
+          style={[styles.secondaryButton, isBusy && styles.buttonDisabled]}
+          onPress={handleSaveDocument}
+          disabled={isBusy}
+        >
+          {isSaving && !isCreatingFlashcards ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.secondaryButtonText}>
+              {savedDocument ? 'Document Saved' : 'Save Document'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
       {showTitleInput && (
         <View style={styles.titleInputOverlay}>
           <View style={styles.titleInputContainer}>
-            <Text style={styles.titleInputLabel}>Tên tài liệu:</Text>
-            <TextInput
-              style={styles.titleInput}
-              placeholder="Nhập tên tài liệu..."
-              placeholderTextColor="#999"
-              value={documentTitle}
-              onChangeText={setDocumentTitle}
-              autoFocus
-            />
+            <Text style={styles.titleInputLabel}>
+              {pendingAction === 'createFlashcard'
+                ? 'Save this document before creating flashcards'
+                : 'Save document'}
+            </Text>
+            {isGeneratingTitle ? (
+              <View style={styles.generatingTitleBox}>
+                <ActivityIndicator size="small" color="#6B9071" />
+                <Text style={styles.generatingTitleText}>Generating document title...</Text>
+              </View>
+            ) : (
+              <TextInput
+                style={styles.titleInput}
+                placeholder="Document title"
+                placeholderTextColor="#999"
+                value={documentTitle}
+                onChangeText={setDocumentTitle}
+                autoFocus
+              />
+            )}
             <View style={styles.titleInputActions}>
               <TouchableOpacity
                 style={[styles.titleInputButton, styles.cancelButton]}
                 onPress={() => {
                   setShowTitleInput(false);
-                  setDocumentTitle('');
+                  setPendingAction(null);
                 }}
+                disabled={isSaving || isCreatingFlashcards}
               >
-                <Text style={styles.titleInputButtonText}>Hủy</Text>
+                <Text style={styles.titleInputButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.titleInputButton, styles.confirmButton]}
-                onPress={handleSaveDocument}
-                disabled={!documentTitle.trim() || isSaving}
+                style={[styles.titleInputButton, styles.confirmButton, isBusy && styles.buttonDisabled]}
+                onPress={handleConfirmTitle}
+                disabled={!documentTitle.trim() || isBusy}
               >
-                {isSaving ? (
+                {isBusy ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.titleInputButtonText}>Lưu</Text>
+                  <Text style={styles.titleInputButtonText}>
+                    {pendingAction === 'createFlashcard' ? 'Save and Create' : 'Save'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -292,7 +385,6 @@ function SummaryScreen() {
         </View>
       )}
 
-      {/* Custom Alert Modal */}
       <CustomAlertModal
         visible={alertModalVisible}
         title={alertConfig.title}
@@ -321,10 +413,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#6B9071',
   },
   backButton: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#fff',
-    fontWeight: '600',
-    paddingHorizontal: 10,
+    fontWeight: '700',
+    width: 72,
   },
   headerTitle: {
     fontSize: 18,
@@ -390,14 +482,6 @@ const styles = StyleSheet.create({
     color: '#999',
     fontWeight: '500',
   },
-  bookmarkSection: {
-    alignItems: 'flex-start',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-  },
-  bookmarkIcon: {
-    fontSize: 24,
-  },
   actionsContainer: {
     flexDirection: 'row',
     gap: 12,
@@ -406,6 +490,7 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
+    minHeight: 48,
     paddingVertical: 12,
     borderRadius: 10,
     justifyContent: 'center',
@@ -426,6 +511,7 @@ const styles = StyleSheet.create({
     color: '#344E39',
     fontSize: 13,
     fontWeight: '700',
+    textAlign: 'center',
   },
   secondaryActionsContainer: {
     justifyContent: 'center',
@@ -434,11 +520,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   secondaryButton: {
+    minHeight: 46,
     paddingVertical: 11,
     paddingHorizontal: 20,
     borderRadius: 8,
     backgroundColor: '#6B9071',
-    width: '50%',
+    width: '54%',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -447,6 +534,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
     textAlign: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   errorContainer: {
     flex: 1,
@@ -458,7 +548,6 @@ const styles = StyleSheet.create({
     color: '#333',
     fontWeight: '600',
   },
-  // Title Input Modal Styles
   titleInputOverlay: {
     position: 'absolute',
     top: 0,
@@ -474,8 +563,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 20,
-    width: '80%',
-    maxWidth: 350,
+    width: width * 0.84,
+    maxWidth: 360,
     elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -484,9 +573,10 @@ const styles = StyleSheet.create({
   },
   titleInputLabel: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#333',
     marginBottom: 12,
+    textAlign: 'center',
   },
   titleInput: {
     borderWidth: 1,
@@ -498,16 +588,35 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 16,
   },
+  generatingTitleBox: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: '#AEC3B0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  generatingTitleText: {
+    fontSize: 13,
+    color: '#344E39',
+    fontWeight: '600',
+  },
   titleInputActions: {
     flexDirection: 'row',
     gap: 10,
     justifyContent: 'flex-end',
   },
   titleInputButton: {
-    paddingHorizontal: 16,
+    flex: 1,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 8,
-    minWidth: 80,
+    minHeight: 42,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -518,9 +627,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#6B9071',
   },
   titleInputButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#fff',
+    textAlign: 'center',
   },
 });
 

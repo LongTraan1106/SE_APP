@@ -61,6 +61,12 @@ export interface LogoutResponse {
   message: string;
 }
 
+export interface CurrentUserResponse {
+  success: boolean;
+  message: string;
+  data: UserResponse;
+}
+
 class AuthService {
   /**
    * Sign Up - Tạo tài khoản mới
@@ -207,6 +213,28 @@ class AuthService {
   /**
    * Health Check - Kiểm tra API availability
    */
+  async getCurrentUser(accessToken: string): Promise<UserResponse> {
+    try {
+      const response = await fetch(`${API_URL}/api/auth/me?access_token=${encodeURIComponent(accessToken)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data: CurrentUserResponse = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to fetch current user');
+      }
+
+      return data.data;
+    } catch (error) {
+      console.error('Get current user error:', error);
+      throw error;
+    }
+  }
+
   async healthCheck(): Promise<boolean> {
     try {
       const response = await fetch(`${API_URL}/health`);

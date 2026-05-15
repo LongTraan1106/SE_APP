@@ -101,14 +101,14 @@ export function RootNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator
+        key={isLoggedIn ? 'app-stack' : 'auth-stack'}
         screenOptions={{
           headerShown: false,
         }}
         initialRouteName={isLoggedIn ? 'TabNavigator' : 'SignIn'}
       >
-        {/* Auth Stack */}
-        {!isLoggedIn && (
-          <Stack.Group>
+        {!isLoggedIn ? (
+          <Stack.Group navigationKey="auth">
             <Stack.Screen
               name="SignIn"
               component={SignInScreen}
@@ -116,29 +116,28 @@ export function RootNavigator() {
             />
             <Stack.Screen name="SignUp" component={SignUpScreen} />
           </Stack.Group>
-        )}
+        ) : (
+          <>
+            <Stack.Group navigationKey="app" screenOptions={{ animation: 'none' }}>
+              <Stack.Screen name="TabNavigator" component={TabNavigator} />
+            </Stack.Group>
 
-        {/* App Stack */}
-        {isLoggedIn && (
-          <Stack.Group screenOptions={{ animation: 'none' }}>
-            <Stack.Screen name="TabNavigator" component={TabNavigator} />
-          </Stack.Group>
+            <Stack.Group
+              navigationKey="app-screens"
+              screenOptions={{
+                presentation: 'card',
+              }}
+            >
+              <Stack.Screen name="Camera" component={CameraScreen} />
+              <Stack.Screen name="DocumentScanResult" component={DocumentScanResultScreen} />
+              <Stack.Screen name="Summary" component={SummaryScreen} />
+              <Stack.Screen name="DocumentDetails" component={DocumentDetailsScreen} />
+              <Stack.Screen name="Groups" component={GroupScreen} />
+              <Stack.Screen name="SearchGroups" component={SearchGroupScreen} />
+              <Stack.Screen name="FlashcardDetail" component={FlashcardDetailScreen} />
+            </Stack.Group>
+          </>
         )}
-
-        {/* Modal screens */}
-        <Stack.Group
-          screenOptions={{
-            presentation: 'card',
-          }}
-        >
-          <Stack.Screen name="Camera" component={CameraScreen} />
-          <Stack.Screen name="DocumentScanResult" component={DocumentScanResultScreen} />
-          <Stack.Screen name="Summary" component={SummaryScreen} />
-          <Stack.Screen name="DocumentDetails" component={DocumentDetailsScreen} />
-          <Stack.Screen name="Groups" component={GroupScreen} />
-          <Stack.Screen name="SearchGroups" component={SearchGroupScreen} />
-          <Stack.Screen name="FlashcardDetail" component={FlashcardDetailScreen} />
-        </Stack.Group>
       </Stack.Navigator>
     </NavigationContainer>
   );

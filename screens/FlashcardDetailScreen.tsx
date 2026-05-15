@@ -1,6 +1,7 @@
-import React from 'react';
+﻿import React from 'react';
 import {
   Animated,
+  ActivityIndicator,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -11,6 +12,8 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CustomAlertModal, AlertButton } from '../components/CustomAlertModal';
+import { documentService, FlashcardBlock, FlashcardSet } from '../services/documentService';
 
 type CardStatus = 'known' | 'unknown' | null;
 
@@ -33,65 +36,77 @@ interface ActionButtonProps {
   onPress: () => void;
 }
 
-const SAMPLE_CARDS: FlashcardItem[] = [
-  {
-    id: 'card-1',
-    question: 'What is React Native used for?',
-    answer: 'Building native mobile apps with React components.',
-    isFavourite: false,
-    status: null,
-  },
-  {
-    id: 'card-2',
-    question: 'What does JSX stand for?',
-    answer: 'JavaScript XML, a syntax extension for writing UI markup.',
-    isFavourite: true,
-    status: null,
-  },
-  {
-    id: 'card-3',
-    question: 'What is a component?',
-    answer: 'A reusable piece of UI with its own logic and rendering.',
-    isFavourite: false,
-    status: null,
-  },
-  {
-    id: 'card-4',
-    question: 'What does state represent?',
-    answer: 'Data that can change over time and trigger UI updates.',
-    isFavourite: false,
-    status: null,
-  },
-  {
-    id: 'card-5',
-    question: 'Why use navigation?',
-    answer: 'To move between screens and organize app flows.',
-    isFavourite: false,
-    status: null,
-  },
-];
-
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
+
+const flattenFlashcards = (set: Pick<FlashcardSet, 'id' | 'flashcard_data'>): FlashcardItem[] => {
+  const cards: FlashcardItem[] = [];
+
+  set.flashcard_data.forEach((block, blockIndex) => {
+    block.flashcards?.forEach((card, cardIndex) => {
+      cards.push({
+        id: `${set.id}-${block.page}-${block.group_idx}-${block.box_idx}-${blockIndex}-${cardIndex}`,
+        question: card.question,
+        answer: card.answer,
+        isFavourite: false,
+        status: null,
+      });
+    });
+  });
+
+  return cards;
+};
+
+const countValidFlashcards = (flashcardData: FlashcardBlock[] = []) =>
+  flashcardData.reduce(
+    (total, block) =>
+      total +
+      (block.flashcards || []).filter(
+        card => card.question?.trim() && card.answer?.trim(),
+      ).length,
+    0,
+  );
 
 function FlashcardDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const initialIndex = Math.min(
-    Number(route.params?.initialIndex) || 0,
-    SAMPLE_CARDS.length,
-  );
-  const [cards, setCards] = React.useState<FlashcardItem[]>(SAMPLE_CARDS);
-  const [currentIndex, setCurrentIndex] = React.useState(initialIndex);
+  const initialFlashcardId = Number(route.params?.flashcardId) || 0;
+  const draftFlashcardData = route.params?.draftFlashcardData as FlashcardBlock[] | undefined;
+  const saveOptions = route.params?.saveOptions || {};
+  const isDraftFlow = Array.isArray(draftFlashcardData);
+  const allowLeaveRef = React.useRef(false);
+  const isHandlingLeaveRef = React.useRef(false);
+  const [savedFlashcardId, setSavedFlashcardId] = React.useState(initialFlashcardId);
+  const [flashcardData, setFlashcardData] = React.useState<FlashcardBlock[]>(draftFlashcardData || []);
+  const [isSaved, setIsSaved] = React.useState(!isDraftFlow);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [setTitle, setSetTitle] = React.useState(route.params?.title || 'Flashcards');
+  const [setFavourite, setSetFavourite] = React.useState(false);
+  const [cards, setCards] = React.useState<FlashcardItem[]>([]);
+  const [currentIndex, setCurrentIndex] = React.useState(0);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
   const [isBackSide, setIsBackSide] = React.useState(false);
+  const [alertModalVisible, setAlertModalVisible] = React.useState(false);
+  const [alertConfig, setAlertConfig] = React.useState<{
+    title: string;
+    message: string;
+    icon: string;
+    buttons: AlertButton[];
+  }>({
+    title: '',
+    message: '',
+    icon: '!',
+    buttons: [],
+  });
   const flipAnim = React.useRef(new Animated.Value(0)).current;
   const pan = React.useRef(new Animated.ValueXY()).current;
 
   const currentCard = cards[currentIndex];
   const visibleCards = cards.slice(currentIndex, currentIndex + 3);
-  const progress = currentIndex / cards.length;
+  const progress = cards.length > 0 ? currentIndex / cards.length : 0;
   const progressPercent = Math.round(progress * 100);
 
   const horizontalPadding = clamp(width * 0.05, 16, 28);
@@ -100,6 +115,7 @@ function FlashcardDetailScreen() {
   const backButtonSize = clamp(width * 0.105, 38, 54);
   const progressTop = clamp(height * 0.024, 14, 28);
   const progressHeight = clamp(height * 0.012, 8, 12);
+  const draftSaveHeight = isDraftFlow ? 58 : 0;
   const deckTop = clamp(height * 0.02, 10, 22);
   const actionTop = clamp(height * 0.022, 12, 24);
   const actionHeight = clamp(height * 0.065, 46, 68);
@@ -110,6 +126,7 @@ function FlashcardDetailScreen() {
     height -
     headerTop -
     backButtonSize -
+    draftSaveHeight -
     progressTop -
     progressHeight -
     deckTop -
@@ -138,6 +155,61 @@ function FlashcardDetailScreen() {
   const cardPaddingVertical = clamp(height * 0.028, 18, 30);
   const actionLabelSize = clamp(actionHeight * 0.54, 26, 40);
   const progressTextFontSize = clamp(width * 0.038, 13, 16);
+
+  React.useEffect(() => {
+    const loadFlashcardDetail = async () => {
+      if (isDraftFlow) {
+        if (!draftFlashcardData || countValidFlashcards(draftFlashcardData) <= 0) {
+          setError('No valid flashcards to preview');
+          setIsLoading(false);
+          return;
+        }
+
+        const draftSet = {
+          id: 0,
+          flashcard_data: draftFlashcardData,
+        };
+        const nextCards = flattenFlashcards(draftSet);
+        setCards(nextCards);
+        setFlashcardData(draftFlashcardData);
+        setCurrentIndex(0);
+        setSetTitle(route.params?.title || 'Flashcards');
+        setSetFavourite(false);
+        setIsLoading(false);
+        return;
+      }
+
+      if (!savedFlashcardId) {
+        setError('Invalid flashcard set');
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+      try {
+        const detail = await documentService.getFlashcardDetail(savedFlashcardId);
+        const nextCards = flattenFlashcards(detail);
+        const safeInitialIndex = Math.min(
+          Number(route.params?.initialIndex) || 0,
+          nextCards.length,
+        );
+        setCards(nextCards);
+        setFlashcardData(detail.flashcard_data);
+        setCurrentIndex(safeInitialIndex);
+        setSetTitle(detail.title);
+        setSetFavourite(detail.is_favorite);
+        setIsSaved(true);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Cannot load flashcard set';
+        setError(message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadFlashcardDetail();
+  }, [draftFlashcardData, isDraftFlow, route.params?.initialIndex, route.params?.title, savedFlashcardId]);
 
   React.useEffect(() => {
     flipAnim.setValue(0);
@@ -208,18 +280,204 @@ function FlashcardDetailScreen() {
     setIsBackSide(value => !value);
   };
 
-  const handleToggleFavourite = () => {
-    if (!currentCard) {
+  const navigateToFlashcardScreen = React.useCallback(() => {
+    allowLeaveRef.current = true;
+    navigation.navigate('TabNavigator', { screen: 'Flashcard' });
+  }, [navigation]);
+
+  const saveDraftFlashcardSet = React.useCallback(async () => {
+    if (isSaved && savedFlashcardId) {
+      return savedFlashcardId;
+    }
+
+    if (countValidFlashcards(flashcardData) <= 0) {
+      throw new Error('Cannot save an empty flashcard set');
+    }
+
+    setIsSaving(true);
+    try {
+      const savedSet = await documentService.saveFlashcardSet(
+        setTitle,
+        flashcardData,
+        {
+          documentId: saveOptions.documentId,
+          sourceFileName: saveOptions.sourceFileName,
+          tags: saveOptions.tags || ['Flashcard'],
+        },
+      );
+      setSavedFlashcardId(savedSet.id);
+      setSetTitle(savedSet.title);
+      setSetFavourite(savedSet.is_favorite);
+      setIsSaved(true);
+      return savedSet.id;
+    } finally {
+      setIsSaving(false);
+    }
+  }, [flashcardData, isSaved, saveOptions.documentId, saveOptions.sourceFileName, saveOptions.tags, savedFlashcardId, setTitle]);
+
+  const promptDoneWithUnsavedDraft = React.useCallback(() => {
+    setAlertConfig({
+      title: 'Unsaved Flashcard Set',
+      message: 'Do you want to save this flashcard set before finishing?',
+      icon: '!',
+      buttons: [
+        {
+          text: 'No',
+          style: 'destructive',
+          onPress: () => {
+            setAlertModalVisible(false);
+            allowLeaveRef.current = true;
+            navigation.goBack();
+          },
+        },
+        {
+          text: 'Yes',
+          onPress: async () => {
+            try {
+              await saveDraftFlashcardSet();
+              setAlertModalVisible(false);
+              navigateToFlashcardScreen();
+            } catch (err) {
+              const message = err instanceof Error ? err.message : 'Cannot save flashcard set';
+              setAlertConfig({
+                title: 'Error',
+                message,
+                icon: '!',
+                buttons: [
+                  {
+                    text: 'OK',
+                    onPress: () => setAlertModalVisible(false),
+                    style: 'default',
+                  },
+                ],
+              });
+            }
+          },
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => setAlertModalVisible(false),
+        },
+      ],
+    });
+    setAlertModalVisible(true);
+  }, [navigateToFlashcardScreen, navigation, saveDraftFlashcardSet]);
+
+  const promptBackWithUnsavedDraft = React.useCallback(
+    (continueBack?: () => void) => {
+      setAlertConfig({
+        title: 'Unsaved Flashcard Set',
+        message: 'If you go back, this flashcard set will not be saved.',
+        icon: '!',
+        buttons: [
+          {
+            text: 'Stay',
+            style: 'cancel',
+            onPress: () => setAlertModalVisible(false),
+          },
+          {
+            text: 'Go Back',
+            style: 'destructive',
+            onPress: () => {
+              setAlertModalVisible(false);
+              allowLeaveRef.current = true;
+              if (continueBack) {
+                continueBack();
+              } else {
+                navigation.goBack();
+              }
+            },
+          },
+        ],
+      });
+      setAlertModalVisible(true);
+    },
+    [navigation],
+  );
+  React.useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event: any) => {
+      if (!isDraftFlow || isSaved || allowLeaveRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      if (isHandlingLeaveRef.current) {
+        return;
+      }
+
+      isHandlingLeaveRef.current = true;
+      promptBackWithUnsavedDraft(() => navigation.dispatch(event.data.action));
+      setTimeout(() => {
+        isHandlingLeaveRef.current = false;
+      }, 500);
+    });
+
+    return unsubscribe;
+  }, [isDraftFlow, isSaved, navigation, promptBackWithUnsavedDraft]);
+
+  const handleBackPress = () => {
+    if (isDraftFlow && !isSaved) {
+      promptBackWithUnsavedDraft();
       return;
     }
 
-    setCards(prevCards =>
-      prevCards.map(card =>
-        card.id === currentCard.id
-          ? { ...card, isFavourite: !card.isFavourite }
-          : card,
-      ),
-    );
+    navigation.goBack();
+  };
+
+  const handleDonePress = () => {
+    if (isDraftFlow && !isSaved) {
+      promptDoneWithUnsavedDraft();
+      return;
+    }
+
+    navigateToFlashcardScreen();
+  };
+
+  const handleSavePress = async () => {
+    try {
+      await saveDraftFlashcardSet();
+      setAlertConfig({
+        title: 'Saved',
+        message: 'Flashcard set has been saved.',
+        icon: 'OK',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => setAlertModalVisible(false),
+            style: 'default',
+          },
+        ],
+      });
+      setAlertModalVisible(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot save flashcard set';
+      setAlertConfig({
+        title: 'Error',
+        message,
+        icon: '!',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => setAlertModalVisible(false),
+            style: 'default',
+          },
+        ],
+      });
+      setAlertModalVisible(true);
+    }
+  };
+
+  const handleToggleFavourite = () => {
+    if (!savedFlashcardId || !isSaved) {
+      return;
+    }
+
+    const nextValue = !setFavourite;
+    setSetFavourite(nextValue);
+    documentService.toggleFlashcardFavorite(savedFlashcardId, nextValue).catch(() => {
+      setSetFavourite(!nextValue);
+    });
   };
 
   const frontRotate = flipAnim.interpolate({
@@ -248,7 +506,7 @@ function FlashcardDetailScreen() {
             },
           ]}
           activeOpacity={0.8}
-          onPress={() => navigation.goBack()}
+          onPress={handleBackPress}
         >
           <Text
             style={[
@@ -262,11 +520,38 @@ function FlashcardDetailScreen() {
             {'<'}
           </Text>
         </TouchableOpacity>
-        <Text style={[styles.title, { fontSize: titleFontSize }]}>
-          {route.params?.title || 'Something'}
+        <Text
+          style={[styles.title, { fontSize: titleFontSize }]}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {setTitle}
         </Text>
-        <View style={{ width: backButtonSize }} />
+        <TouchableOpacity
+          style={[styles.doneButton, { width: backButtonSize + 28 }]}
+          activeOpacity={0.8}
+          onPress={handleDonePress}
+          disabled={isSaving}
+        >
+          <Text style={styles.doneText}>{isSaving ? 'Saving' : 'Done'}</Text>
+        </TouchableOpacity>
       </View>
+
+      {isDraftFlow ? (
+        <TouchableOpacity
+          style={[
+            styles.saveSetButton,
+            (isSaved || isSaving || isLoading || !!error) && styles.saveSetButtonDisabled,
+          ]}
+          activeOpacity={0.85}
+          onPress={handleSavePress}
+          disabled={isSaved || isSaving || isLoading || !!error}
+        >
+          <Text style={styles.saveSetText}>
+            {isSaved ? 'Flashcard set saved' : isSaving ? 'Saving flashcard set...' : 'Save flashcard set'}
+          </Text>
+        </TouchableOpacity>
+      ) : null}
 
       <View style={[styles.progressRow, { marginTop: progressTop }]}>
         <View
@@ -289,7 +574,27 @@ function FlashcardDetailScreen() {
       </View>
 
       <View style={[styles.deck, { height: deckHeight, marginTop: deckTop }]}>
-        {visibleCards.length === 0 ? (
+        {isLoading ? (
+          <View
+            style={[
+              styles.finishedCard,
+              { height: cardHeight, borderRadius: cardRadius },
+            ]}
+          >
+            <ActivityIndicator size="large" color="#344E39" />
+            <Text style={styles.finishedText}>Loading cards...</Text>
+          </View>
+        ) : error ? (
+          <View
+            style={[
+              styles.finishedCard,
+              { height: cardHeight, borderRadius: cardRadius },
+            ]}
+          >
+            <Text style={styles.finishedTitle}>Error</Text>
+            <Text style={styles.finishedText}>{error}</Text>
+          </View>
+        ) : visibleCards.length === 0 ? (
           <View
             style={[
               styles.finishedCard,
@@ -447,17 +752,17 @@ function FlashcardDetailScreen() {
           disabled={!currentCard}
         />
         <ActionButton
-          label={currentCard?.isFavourite ? '*' : '☆'}
+          label={setFavourite ? '*' : '+'}
           height={actionHeight}
           wideWidth={wideButtonWidth}
           middleWidth={favouriteButtonWidth}
           labelSize={actionLabelSize}
-          isFavourite={currentCard?.isFavourite}
+          isFavourite={setFavourite}
           onPress={handleToggleFavourite}
-          disabled={!currentCard}
+          disabled={!savedFlashcardId || !isSaved}
         />
         <ActionButton
-          label="✓"
+          label="v"
           height={actionHeight}
           wideWidth={wideButtonWidth}
           middleWidth={favouriteButtonWidth}
@@ -466,6 +771,15 @@ function FlashcardDetailScreen() {
           disabled={!currentCard}
         />
       </View>
+
+      <CustomAlertModal
+        visible={alertModalVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        buttons={alertConfig.buttons}
+        onDismiss={() => setAlertModalVisible(false)}
+      />
     </View>
   );
 }
@@ -480,7 +794,7 @@ function ActionButton({
   disabled,
   onPress,
 }: ActionButtonProps) {
-  const isFavouriteButton = label === '☆' || label === '*';
+  const isFavouriteButton = label === '+' || label === '*';
 
   return (
     <TouchableOpacity
@@ -535,6 +849,32 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '800',
     color: '#000000',
+  },
+  doneButton: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  doneText: {
+    color: '#344E39',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  saveSetButton: {
+    marginTop: 12,
+    backgroundColor: '#6B9071',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveSetButtonDisabled: {
+    opacity: 0.55,
+  },
+  saveSetText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
   },
   progressRow: {
     flexDirection: 'row',

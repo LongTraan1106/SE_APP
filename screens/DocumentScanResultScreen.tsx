@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+﻿import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,6 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -21,7 +20,7 @@ import Flashcard_icon from '../assets/icons/flashcard.svg';
 import Summarize_icon from '../assets/icons/doc.svg';
 import Save_icon from '../assets/icons/save.svg';
 import { CustomAlertModal, AlertButton } from '../components/CustomAlertModal';
-import { documentService } from '../services/documentService';
+import { documentService, OCRData, OCRBlock } from '../services/documentService';
 
 const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GALLERY_HEIGHT = SCREEN_HEIGHT * 0.48;
@@ -51,7 +50,7 @@ function DocumentScanResultScreen() {
   }>({
     title: '',
     message: '',
-    icon: '⚠️',
+    icon: '!',
     buttons: [],
   });
 
@@ -64,12 +63,55 @@ function DocumentScanResultScreen() {
 
   // ============ Real Functions ============
 
+  const buildOcrDataFromCurrentDocument = async (): Promise<OCRData> => {
+    if (pdfData) {
+      const pdfFilePath = pdfData.uri.startsWith('file://')
+        ? pdfData.uri.substring(7)
+        : pdfData.uri;
+      return documentService.processOCR(pdfFilePath);
+    }
+
+    let combinedOcrResults: OCRBlock[] = [];
+    let combinedExtractedText = '';
+    let totalTime = 0;
+
+    for (let i = 0; i < images.length; i++) {
+      const imagePath = images[i].startsWith('file://')
+        ? images[i].substring(7)
+        : images[i];
+      const ocrData = await documentService.processOCR(imagePath);
+
+      combinedExtractedText += `\n\n--- IMAGE ${i + 1} ---\n`;
+      combinedExtractedText += ocrData.extracted_text;
+      combinedOcrResults.push(
+        ...ocrData.ocr_results.map(block => ({
+          ...block,
+          page: i + 1,
+        }))
+      );
+
+      const timeMatch = (ocrData.processing_time || '0s').match(/[\d.]+/);
+      if (timeMatch) {
+        totalTime += parseFloat(timeMatch[0]);
+      }
+    }
+
+    return {
+      ocr_results: combinedOcrResults,
+      extracted_text: combinedExtractedText.trim(),
+      file_name: `scanned_images_${images.length}`,
+      processing_time: `${totalTime.toFixed(2)}s`,
+      text_length: combinedExtractedText.length,
+      num_blocks: combinedOcrResults.length,
+    };
+  };
+
   const handleSummarize = async () => {
     if (!pdfData && images.length === 0) {
       setAlertConfig({
-        title: 'Lỗi',
-        message: 'Không có tài liệu nào để tóm tắt',
-        icon: '❌',
+        title: 'Error',
+        message: 'No document available to summarize.',
+        icon: '!',
         buttons: [
           {
             text: 'OK',
@@ -86,9 +128,9 @@ function DocumentScanResultScreen() {
 
     // Show loading alert
     setAlertConfig({
-      title: '⏳ Đang xử lý',
-      message: 'Đang trích xuất nội dung từ tài liệu...\nVui lòng chờ trong giây lát',
-      icon: '⏳',
+      title: 'Processing',
+      message: 'Extracting content from the document. Please wait.',
+      icon: '...',
       buttons: [],
     });
     setAlertModalVisible(true);
@@ -97,12 +139,14 @@ function DocumentScanResultScreen() {
       let allSummaryData: any = {
         pages: {},
         full_summary: '',
+        structured_summary: [],
         processing_time: '',
         num_pages: 0,
       };
+      let allOcrData: OCRData | null = null;
 
       if (pdfData) {
-        // ===== XỬ LÝ PDF =====
+        // Process PDF
         const pdfFilePath = pdfData.uri.startsWith('file://') 
           ? pdfData.uri.substring(7) 
           : pdfData.uri;
@@ -110,24 +154,28 @@ function DocumentScanResultScreen() {
         console.log('[Summary Flow] Processing PDF:', pdfFilePath);
 
         try {
-          const summaryData = await documentService.processOCRAndSummary(pdfFilePath);
-          allSummaryData = summaryData;
+          const processedData = await documentService.processOCRAndSummary(pdfFilePath);
+          allSummaryData = processedData.summaryData;
+          allOcrData = processedData.ocrData;
         } catch (pdfError) {
           const errorMsg = pdfError instanceof Error ? pdfError.message : 'Unknown error';
           console.error('[Summary Flow] PDF Error:', pdfError);
           
           // Re-throw with context
           if (errorMsg.includes('Text content cannot be empty') || errorMsg.includes('empty')) {
-            throw new Error('Không thể trích xuất nội dung từ PDF. Tài liệu có thể quá mờ hoặc không có nội dung.');
+            throw new Error('Could not extract readable content from this PDF. The document may be blurry or empty.');
           }
           throw pdfError;
         }
       } else {
-        // ===== XỬ LÝ MULTIPLE IMAGES =====
+        // Process multiple images
         console.log('[Summary Flow] Processing', images.length, 'images');
 
         let combinedPages: { [key: string]: string } = {};
         let combinedFullSummary = '';
+        let combinedStructuredSummary: Array<OCRBlock & { summary?: string }> = [];
+        let combinedOcrResults: OCRBlock[] = [];
+        let combinedExtractedText = '';
         let totalTime = 0;
         let successCount = 0;
         let emptyContentCount = 0;
@@ -141,23 +189,40 @@ function DocumentScanResultScreen() {
           console.log(`[Summary Flow] Processing image ${i + 1}/${images.length}`);
 
           try {
-            const summaryData = await documentService.processOCRAndSummary(imagePath);
+            const processedData = await documentService.processOCRAndSummary(imagePath);
+            const { summaryData, ocrData } = processedData;
 
-            // Gộp kết quả từng trang
+            // Merge page results
             Object.keys(summaryData.pages).forEach(pageKey => {
-              // Rename page keys để tránh trùng lặp khi có multiple images
+              // Rename page keys to avoid collisions across multiple images
               const newKey = `page_${i + 1}_${pageKey}`;
               combinedPages[newKey] = summaryData.pages[pageKey];
             });
 
-            // Gộp full summary
+            // Merge full summary
             if (Object.keys(combinedPages).length > 0) {
               combinedFullSummary += '\n\n' + '='.repeat(50) + '\n\n';
             }
-            combinedFullSummary += `--- ẢNH ${i + 1} ---\n`;
+            combinedFullSummary += `--- IMAGE ${i + 1} ---\n`;
             combinedFullSummary += summaryData.full_summary;
+            combinedExtractedText += `\n\n--- IMAGE ${i + 1} ---\n`;
+            combinedExtractedText += ocrData.extracted_text;
+            combinedOcrResults.push(
+              ...ocrData.ocr_results.map(block => ({
+                ...block,
+                page: i + 1,
+              }))
+            );
+            if (summaryData.structured_summary) {
+              combinedStructuredSummary.push(
+                ...summaryData.structured_summary.map(block => ({
+                  ...block,
+                  page: i + 1,
+                }))
+              );
+            }
 
-            // Cộng dồn thời gian
+            // Accumulate processing time
             const timeString = summaryData.processing_time || '0s';
             const timeMatch = timeString.match(/[\d.]+/);
             if (timeMatch) {
@@ -173,11 +238,11 @@ function DocumentScanResultScreen() {
             if (errorMsg.includes('Text content cannot be empty') || errorMsg.includes('empty')) {
               emptyContentCount++;
               combinedPages[`page_${i + 1}_skipped`] = 
-                '❌ Ảnh này không thể trích xuất nội dung (quá mờ hoặc không có nội dung)';
+                'This image could not be processed because it is blurry or empty.';
             } else {
               errorCount++;
               combinedPages[`page_${i + 1}_error`] = 
-                `❌ Lỗi khi xử lý: ${errorMsg}`;
+                `Processing error: ${errorMsg}`;
             }
           }
         }
@@ -185,29 +250,38 @@ function DocumentScanResultScreen() {
         // Check if all images failed
         if (successCount === 0) {
           setAlertModalVisible(false);
-          throw new Error('Không thể trích xuất nội dung từ bất kỳ ảnh nào. Vui lòng quét lại với chất lượng tốt hơn.');
+          throw new Error('Could not extract content from any image. Please scan again with better quality.');
         }
 
         // Build summary with metadata about what succeeded/failed
         let metadataMsg = '';
         if (successCount > 0 || emptyContentCount > 0 || errorCount > 0) {
-          metadataMsg = `\n\n📊 Kết quả xử lý:\n`;
-          if (successCount > 0) metadataMsg += `✅ Thành công: ${successCount} ảnh\n`;
-          if (emptyContentCount > 0) metadataMsg += `⚠️ Quá mờ/Trống: ${emptyContentCount} ảnh\n`;
-          if (errorCount > 0) metadataMsg += `❌ Lỗi khác: ${errorCount} ảnh\n`;
+          metadataMsg = `\n\nProcessing results:\n`;
+          if (successCount > 0) metadataMsg += `Successful: ${successCount} image(s)\n`;
+          if (emptyContentCount > 0) metadataMsg += `Blurry or empty: ${emptyContentCount} image(s)\n`;
+          if (errorCount > 0) metadataMsg += `Other errors: ${errorCount} image(s)\n`;
         }
 
         allSummaryData = {
           pages: combinedPages,
           full_summary: combinedFullSummary + metadataMsg,
+          structured_summary: combinedStructuredSummary,
           processing_time: `${totalTime.toFixed(2)}s`,
           num_pages: successCount,
+        };
+        allOcrData = {
+          ocr_results: combinedOcrResults,
+          extracted_text: combinedExtractedText.trim(),
+          file_name: `scanned_images_${images.length}`,
+          processing_time: `${totalTime.toFixed(2)}s`,
+          text_length: combinedExtractedText.length,
+          num_blocks: combinedOcrResults.length,
         };
       }
 
       console.log('[Summary Flow] Completed! Navigating to SummaryScreen');
 
-      // Đóng loading alert
+      // Close loading alert
       setAlertModalVisible(false);
 
       // Show partial success warning if applicable
@@ -219,26 +293,25 @@ function DocumentScanResultScreen() {
         if (failCount > 0) {
           // Show warning before navigating
           setAlertConfig({
-            title: '⚠️ Xử lý Không Hoàn Toàn',
-            message: `Chỉ ${successCount}/${totalFiles} ảnh được xử lý thành công.\n\n` +
-              `${failCount} ảnh không thể trích xuất nội dung (quá mờ hoặc không có nội dung).\n\n` +
-              'Bạn có thể:\n' +
-              '• Xem kết quả hiện tại\n' +
-              '• Quét lại để cải thiện chất lượng',
-            icon: '⚠️',
+            title: 'Partial Processing',
+            message: `Only ${successCount}/${totalFiles} image(s) were processed successfully.\n\n` +
+              `${failCount} image(s) could not be read because they were blurry or empty.\n\n` +
+              'You can view the current result or scan again for better quality.',
+            icon: '!',
             buttons: [
               {
-                text: 'Xem Kết Quả',
+                text: 'View Result',
                 onPress: () => {
                   setAlertModalVisible(false);
                   navigation.navigate('Summary', {
                     summaryData: allSummaryData,
+                    ocrData: allOcrData,
                   });
                 },
                 style: 'default',
               },
               {
-                text: 'Quét Lại',
+                text: 'Scan Again',
                 onPress: () => {
                   setAlertModalVisible(false);
                   handleRescan();
@@ -252,32 +325,31 @@ function DocumentScanResultScreen() {
           // All succeeded - navigate directly
           navigation.navigate('Summary', {
             summaryData: allSummaryData,
+            ocrData: allOcrData,
           });
         }
       } else {
         // No successful processing
-        throw new Error('Không thể xử lý bất kỳ ảnh nào. Vui lòng quét lại.');
+        throw new Error('Could not process any image. Please scan again.');
       }
     } catch (error) {
       console.error('[Summary Error]:', error);
 
       const errorMessage = error instanceof Error 
         ? error.message 
-        : 'Đã xảy ra lỗi khi tóm tắt tài liệu';
+        : 'An error occurred while summarizing the document.';
 
       // Handle specific error: empty text content
       if (errorMessage.includes('Text content cannot be empty') || errorMessage.includes('empty')) {
         setAlertConfig({
-          title: '⚠️ Tài liệu không rõ ràng',
-          message: '🔍 Không thể trích xuất nội dung từ tài liệu.\n\n' +
-            'Tài liệu có thể quá mờ, không có nội dung, hoặc định dạng không hỗ trợ.\n\n' +
-            'Vui lòng:\n' +
-            '• Quét lại tài liệu với chất lượng tốt hơn\n' +
-            '• Đảm bảo tài liệu có nội dung rõ ràng',
-          icon: '⚠️',
+          title: 'Document Not Clear',
+          message: 'Could not extract readable content from this document.\n\n' +
+            'The document may be blurry, empty, or in an unsupported format.\n\n' +
+            'Please scan again with better quality and make sure the document has readable content.',
+          icon: '!',
           buttons: [
             {
-              text: 'Quét lại',
+              text: 'Scan Again',
               onPress: () => {
                 setAlertModalVisible(false);
                 handleRescan();
@@ -285,7 +357,7 @@ function DocumentScanResultScreen() {
               style: 'default',
             },
             {
-              text: 'Hủy',
+              text: 'Cancel',
               onPress: () => setAlertModalVisible(false),
               style: 'cancel',
             },
@@ -294,16 +366,13 @@ function DocumentScanResultScreen() {
       } else {
         // Generic error handling
         setAlertConfig({
-          title: '❌ Lỗi xử lý',
+          title: 'Processing Error',
           message: `${errorMessage}\n\n` +
-            'Vui lòng:\n' +
-            '• Kiểm tra kết nối mạng\n' +
-            '• Thử lại quá trình\n' +
-            '• Quét lại tài liệu nếu vấn đề vẫn tiếp diễn',
-          icon: '❌',
+            'Please check your connection, try again, or scan the document again if the issue continues.',
+          icon: '!',
           buttons: [
             {
-              text: 'Quét lại',
+              text: 'Scan Again',
               onPress: () => {
                 setAlertModalVisible(false);
                 handleRescan();
@@ -311,7 +380,7 @@ function DocumentScanResultScreen() {
               style: 'default',
             },
             {
-              text: 'Hủy',
+              text: 'Cancel',
               onPress: () => setAlertModalVisible(false),
               style: 'cancel',
             },
@@ -326,27 +395,38 @@ function DocumentScanResultScreen() {
 
   const handleCreateFlashcard = async () => {
     setIsProcessing(true);
+    setAlertConfig({
+      title: 'Creating Flashcards',
+      message: 'Extracting OCR content and creating flashcards from this document...',
+      icon: '...',
+      buttons: [],
+    });
+    setAlertModalVisible(true);
+
     try {
-      // Simulate API call
-      await new Promise<void>(resolve => setTimeout(resolve, 1500));
-      setAlertConfig({
-        title: '✅ Tạo Flashcard',
-        message: 'Đang tạo flashcard từ tài liệu...\n\n(Tính năng này sẽ gọi backend để xử lý)',
-        icon: '🎴',
-        buttons: [
-          {
-            text: 'OK',
-            onPress: () => setAlertModalVisible(false),
-            style: 'default',
-          },
-        ],
+      const ocrData = await buildOcrDataFromCurrentDocument();
+      const processed = await documentService.processFlashcards(ocrData);
+      const title = pdfData?.name
+        ? `Flashcards - ${pdfData.name}`
+        : `Flashcards - ${images.length} scanned page${images.length > 1 ? 's' : ''}`;
+
+      setAlertModalVisible(false);
+      navigation.navigate('FlashcardDetail', {
+        title,
+        draftFlashcardData: processed.flashcard_data,
+        draftTotalCards: processed.total_cards,
+        saveOptions: {
+          sourceFileName: ocrData.file_name,
+          tags: ['Flashcard'],
+        },
+        sourceFlow: 'scanResult',
       });
-      setAlertModalVisible(true);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Cannot create flashcards';
       setAlertConfig({
-        title: 'Lỗi',
-        message: 'Không thể tạo flashcard',
-        icon: '❌',
+        title: 'Error',
+        message: errorMessage,
+        icon: '!',
         buttons: [
           {
             text: 'OK',
@@ -367,15 +447,15 @@ function DocumentScanResultScreen() {
       // Simulate API call
       await new Promise<void>(resolve => setTimeout(resolve, 1500));
       setAlertConfig({
-        title: '✅ Lưu Thành Công',
-        message: `Tài liệu ${images.length} trang đã được lưu trữ!\n\n(Sẽ được thêm vào Documents)`,
-        icon: '💾',
+        title: 'Saved',
+        message: `${images.length} page(s) have been saved and will be added to Documents.`,
+        icon: 'OK',
         buttons: [
           {
             text: 'OK',
             onPress: () => {
               setAlertModalVisible(false);
-              // Pop tất cả modal screens về TabNavigator, rồi navigate tới Documents tab
+              // Return to the root stack, then open the Documents tab
               navigation.popToTop();
               navigation.navigate('TabNavigator', { screen: 'Documents' });
             },
@@ -386,9 +466,9 @@ function DocumentScanResultScreen() {
       setAlertModalVisible(true);
     } catch (error) {
       setAlertConfig({
-        title: 'Lỗi',
-        message: 'Không thể lưu tài liệu',
-        icon: '❌',
+        title: 'Error',
+        message: 'Cannot save document.',
+        icon: '!',
         buttons: [
           {
             text: 'OK',
@@ -403,7 +483,7 @@ function DocumentScanResultScreen() {
     }
   };
 
-  // ── Save new pages to DocumentDirectoryPath ───────────────────────────────
+  // Save new pages to DocumentDirectoryPath
   const saveImagesToDocuments = async (imageUris: string[]): Promise<string[]> => {
     const documentsDir = RNFS.DocumentDirectoryPath + '/scanned_documents';
     const dirExists = await RNFS.exists(documentsDir);
@@ -421,7 +501,7 @@ function DocumentScanResultScreen() {
     return savedUris;
   };
 
-  // ── Scan thêm trang và append vào danh sách hiện tại ─────────────────────
+  // Scan additional pages and append them to the current list
   const handleRescan = () => {
     if (isScanning || isProcessing) return;
     setIsScanning(true);
@@ -431,7 +511,7 @@ function DocumentScanResultScreen() {
         const scannedUris = result?.images || result;
 
         if (!Array.isArray(scannedUris) || scannedUris.length === 0) {
-          // User cancelled — no alert needed
+          // User cancelled - no alert needed
           return;
         }
 
@@ -459,9 +539,9 @@ function DocumentScanResultScreen() {
       } catch (error) {
         console.error('Error appending scanned pages:', error);
         setAlertConfig({
-          title: 'Lỗi',
-          message: 'Không thể lưu trang mới. Vui lòng thử lại.',
-          icon: '❌',
+          title: 'Error',
+          message: 'Cannot save the new page. Please try again.',
+          icon: '!',
           buttons: [
             {
               text: 'OK',
@@ -479,17 +559,17 @@ function DocumentScanResultScreen() {
 
   const handleCancel = () => {
     setAlertConfig({
-      title: 'Hủy Quét',
-      message: 'Bạn chắc chắn muốn hủy các trang đã quét?',
-      icon: '⚠️',
+      title: 'Cancel Scan',
+      message: 'Are you sure you want to cancel these scanned pages?',
+      icon: '!',
       buttons: [
         {
-          text: 'Không',
+          text: 'No',
           onPress: () => setAlertModalVisible(false),
           style: 'cancel',
         },
         {
-          text: 'Có',
+          text: 'Yes',
           onPress: () => {
             setAlertModalVisible(false);
             navigation.popToTop();
@@ -512,7 +592,7 @@ function DocumentScanResultScreen() {
 
           {hasError ? (
             <View style={styles.errorContent}>
-              <Text style={styles.errorMessage}>❌ Không thể tải ảnh</Text>
+              <Text style={styles.errorMessage}>Cannot load image</Text>
               <Text style={styles.errorDetail}>{hasError}</Text>
             </View>
           ) : (
@@ -527,15 +607,15 @@ function DocumentScanResultScreen() {
                 style={styles.documentImage}
                 resizeMode="contain"
                 onLoadStart={() => {
-                  console.log(`🖼️ Image ${index} - Loading started`);
+                  console.log(`Image ${index} - Loading started`);
                   setImageLoadingStates(prev => ({ ...prev, [index]: true }));
                 }}
                 onLoadEnd={() => {
-                  console.log(`🖼️ Image ${index} - Loading ended`);
+                  console.log(`Image ${index} - Loading ended`);
                   setImageLoadingStates(prev => ({ ...prev, [index]: false }));
                 }}
                 onError={(error) => {
-                  console.error(`❌ Image ${index} - Error:`, error.nativeEvent.error);
+                  console.error(`Image ${index} - Error:`, error.nativeEvent.error);
                   setImageLoadErrors(prev => ({
                     ...prev,
                     [index]: error.nativeEvent.error || 'Unknown error',
@@ -558,7 +638,7 @@ function DocumentScanResultScreen() {
       return (
         <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>❌ No documents scanned</Text>
+            <Text style={styles.errorText}>No documents scanned</Text>
             <TouchableOpacity
               style={[styles.button, styles.backButton]}
               onPress={() => navigation.goBack()}
@@ -582,7 +662,7 @@ function DocumentScanResultScreen() {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={handleCancel}>
-            <Text style={styles.cancelButton}>✕</Text>
+            <Text style={styles.cancelButton}>x</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>PDF Preview</Text>
           <View style={{ width: 40 }} />
@@ -602,11 +682,23 @@ function DocumentScanResultScreen() {
             onError={(error: any) => {
               console.error('PDF error:', error);
               // More detailed error message
-              let errorMsg = 'Không thể tải file PDF';
+              let errorMsg = 'Cannot load PDF file';
               if (error?.message?.includes('permission')) {
-                errorMsg = 'Lỗi quyền truy cập file. Vui lòng kiểm tra quyền của ứng dụng';
+                errorMsg = 'File permission error. Please check app permissions.';
               }
-              Alert.alert('Lỗi', errorMsg);
+              setAlertConfig({
+                title: 'Error',
+                message: errorMsg,
+                icon: '!',
+                buttons: [
+                  {
+                    text: 'OK',
+                    onPress: () => setAlertModalVisible(false),
+                    style: 'default',
+                  },
+                ],
+              });
+              setAlertModalVisible(true);
             }}
             style={styles.pdf}
           />
@@ -624,10 +716,10 @@ function DocumentScanResultScreen() {
         {/* Info Section */}
         <View style={styles.infoSection}>
           <Text style={styles.infoText}>
-            📄 {pdfData.name}
+            {pdfData.name}
           </Text>
           <Text style={styles.infoSubText}>
-            Size: {(pdfData.size / 1024 / 1024).toFixed(2)} MB · {pdfPages} pages
+            Size: {(pdfData.size / 1024 / 1024).toFixed(2)} MB - {pdfPages} pages
           </Text>
         </View>
 
@@ -679,7 +771,7 @@ function DocumentScanResultScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleCancel}>
-          <Text style={styles.cancelButton}>✕</Text>
+          <Text style={styles.cancelButton}>x</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Scan Results</Text>
         <View style={{ width: 40 }} />
@@ -772,7 +864,7 @@ function DocumentScanResultScreen() {
           disabled={isScanning || isProcessing}
         >
           <Text style={styles.secondaryButtonText}>
-            {isScanning ? 'Scaning...' : 'Scan more pages'}
+          {isScanning ? 'Scaning...' : 'Scan more pages'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -822,7 +914,7 @@ const styles = StyleSheet.create({
     marginVertical: 10,
   },
   pageContainer: {
-    width: width,          // full width — FlatList pages by its own width
+    width: width,          // full width; FlatList handles paging
     paddingHorizontal: 20,
     height: GALLERY_HEIGHT,
     justifyContent: 'center',

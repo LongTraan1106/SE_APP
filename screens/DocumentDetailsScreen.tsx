@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,16 +11,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { CustomAlertModal, AlertButton } from '../components/CustomAlertModal';
-import { documentService } from '../services/documentService';
+import { documentService, FlashcardListItem, OCRData, SummaryData } from '../services/documentService';
 
 const { width } = Dimensions.get('window');
-
-interface SummaryData {
-  pages: { [key: string]: string };
-  full_summary: string;
-  processing_time: string;
-  num_pages: number;
-}
 
 function DocumentDetailsScreen() {
   const insets = useSafeAreaInsets();
@@ -30,6 +23,10 @@ function DocumentDetailsScreen() {
   const { documentId }: { documentId: number } = route.params || {};
 
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
+  const [ocrData, setOcrData] = useState<OCRData | null>(null);
+  const [sourceFileName, setSourceFileName] = useState<string | null>(null);
+  const [flashcardSet, setFlashcardSet] = useState<FlashcardListItem | null>(null);
+  const [isFlashcardProcessing, setIsFlashcardProcessing] = useState(false);
   const [documentTitle, setDocumentTitle] = useState('');
   const [isFavorite, setIsFavorite] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,7 +40,7 @@ function DocumentDetailsScreen() {
   }>({
     title: '',
     message: '',
-    icon: '⚠️',
+    icon: '!',
     buttons: [],
   });
 
@@ -67,7 +64,7 @@ function DocumentDetailsScreen() {
 
   const loadDocumentDetails = async () => {
     if (!documentId) {
-      setError('Document ID không hợp lệ');
+      setError('Invalid document ID');
       setIsLoading(false);
       return;
     }
@@ -79,12 +76,16 @@ function DocumentDetailsScreen() {
       const doc = await documentService.getDocumentDetail(documentId);
       
       setSummaryData(doc.summary_data);
+      setOcrData(doc.ocr_data || null);
+      setSourceFileName(doc.source_file_name || null);
       setDocumentTitle(doc.title);
       setIsFavorite(doc.is_favorite);
+      const flashcardSets = await documentService.getFlashcardSets(documentId);
+      setFlashcardSet(flashcardSets[0] || null);
 
       console.log('[Document Details] Loaded document:', doc.title);
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Không thể tải tài liệu';
+      const errorMsg = err instanceof Error ? err.message : 'Cannot load document';
       setError(errorMsg);
       console.error('[Document Details] Error loading document:', err);
     } finally {
@@ -103,13 +104,13 @@ function DocumentDetailsScreen() {
       setIsFavorite(!isFavorite);
 
       const message = !isFavorite
-        ? `✅ Đã thêm "${documentTitle}" vào yêu thích`
-        : `✅ Đã bỏ yêu thích "${documentTitle}"`;
+        ? `Added "${documentTitle}" to favourites`
+        : `Removed "${documentTitle}" from favourites`;
 
       setAlertConfig({
-        title: '✅ Thành Công',
+        title: 'Success',
         message,
-        icon: isFavorite ? '💚' : '🤍',
+        icon: 'OK',
         buttons: [
           {
             text: 'OK',
@@ -120,11 +121,11 @@ function DocumentDetailsScreen() {
       });
       setAlertModalVisible(true);
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Lỗi cập nhật yêu thích';
+      const errorMsg = error instanceof Error ? error.message : 'Cannot update favourite';
       setAlertConfig({
-        title: '❌ Lỗi',
+        title: 'Error',
         message: errorMsg,
-        icon: '❌',
+        icon: '!',
         buttons: [
           {
             text: 'OK',
@@ -137,35 +138,89 @@ function DocumentDetailsScreen() {
     }
   };
 
-  const handleCreateFlashcard = () => {
+  const handleCreateFlashcard = async () => {
+    if (flashcardSet) {
+      navigation.navigate('FlashcardDetail', {
+        flashcardId: flashcardSet.id,
+        title: flashcardSet.title,
+      });
+      return;
+    }
+
+    if (!ocrData || !ocrData.ocr_results?.length) {
+      setAlertConfig({
+        title: 'No OCR Data',
+        message: 'This document does not have OCR data for flashcard generation.',
+        icon: '!',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => setAlertModalVisible(false),
+            style: 'default',
+          },
+        ],
+      });
+      setAlertModalVisible(true);
+      return;
+    }
+
+    setIsFlashcardProcessing(true);
     setAlertConfig({
-      title: '✅ Tạo Flashcard',
-      message: 'Tính năng này sẽ sớm được cập nhật!\n\nBạn có thể sử dụng nội dung tóm tắt trên để tạo flashcard thủ công.',
-      icon: '🎴',
-      buttons: [
-        {
-          text: 'OK',
-          onPress: () => setAlertModalVisible(false),
-          style: 'default',
-        },
-      ],
+      title: 'Creating Flashcards',
+      message: 'Creating flashcards from this document OCR data...',
+      icon: '...',
+      buttons: [],
     });
     setAlertModalVisible(true);
+
+    try {
+      const processed = await documentService.processFlashcards(ocrData);
+
+      setAlertModalVisible(false);
+      navigation.navigate('FlashcardDetail', {
+        title: `Flashcards - ${documentTitle}`,
+        draftFlashcardData: processed.flashcard_data,
+        draftTotalCards: processed.total_cards,
+        saveOptions: {
+          documentId,
+          sourceFileName,
+          tags: ['Flashcard'],
+        },
+        sourceFlow: 'documentDetails',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot create flashcards';
+      setAlertConfig({
+        title: 'Error',
+        message,
+        icon: '!',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => setAlertModalVisible(false),
+            style: 'default',
+          },
+        ],
+      });
+      setAlertModalVisible(true);
+    } finally {
+      setIsFlashcardProcessing(false);
+    }
   };
 
   const handleDeleteDocument = () => {
     setAlertConfig({
-      title: '⚠️ Xóa Tài Liệu',
-      message: `Bạn có chắc muốn xóa "${documentTitle}"?`,
-      icon: '🗑️',
+      title: 'Delete Document',
+      message: `Are you sure you want to delete "${documentTitle}"?`,
+      icon: '!',
       buttons: [
         {
-          text: 'Hủy',
+          text: 'Cancel',
           onPress: () => setAlertModalVisible(false),
           style: 'cancel',
         },
         {
-          text: 'Xóa',
+          text: 'Delete',
           onPress: async () => {
             setAlertModalVisible(false);
             try {
@@ -173,9 +228,9 @@ function DocumentDetailsScreen() {
               await documentService.deleteDocument(documentId);
 
               setAlertConfig({
-                title: '✅ Đã Xóa',
-                message: `"${documentTitle}" đã được xóa khỏi thư viện.`,
-                icon: '🗑️',
+                title: 'Deleted',
+                message: `"${documentTitle}" has been removed from your library.`,
+                icon: 'OK',
                 buttons: [
                   {
                     text: 'OK',
@@ -189,11 +244,11 @@ function DocumentDetailsScreen() {
               });
               setAlertModalVisible(true);
             } catch (error) {
-              const errorMsg = error instanceof Error ? error.message : 'Lỗi xóa tài liệu';
+              const errorMsg = error instanceof Error ? error.message : 'Cannot delete document';
               setAlertConfig({
-                title: '❌ Lỗi',
+                title: 'Error',
                 message: errorMsg,
-                icon: '❌',
+                icon: '!',
                 buttons: [
                   {
                     text: 'OK',
@@ -226,7 +281,7 @@ function DocumentDetailsScreen() {
       <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#6B9071" />
-          <Text style={styles.loadingText}>Đang tải tài liệu...</Text>
+          <Text style={styles.loadingText}>Loading document...</Text>
         </View>
       </View>
     );
@@ -237,12 +292,12 @@ function DocumentDetailsScreen() {
     return (
       <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>❌ {error}</Text>
+          <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity
             style={styles.retryButton}
             onPress={loadDocumentDetails}
           >
-            <Text style={styles.retryButtonText}>Thử Lại</Text>
+            <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -253,7 +308,7 @@ function DocumentDetailsScreen() {
     return (
       <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>❌ Không có dữ liệu tài liệu</Text>
+          <Text style={styles.errorText}>No document data available</Text>
         </View>
       </View>
     );
@@ -264,11 +319,11 @@ function DocumentDetailsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleBack}>
-          <Text style={styles.backButton}>‹ BACK</Text>
+          <Text style={styles.backButton}>{'< BACK'}</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{documentTitle.toUpperCase()}</Text>
         <TouchableOpacity onPress={handleToggleFavorite}>
-          <Text style={styles.favoriteButton}>{isFavorite ? '❤️' : '🤍'}</Text>
+          <Text style={styles.favoriteButton}>{isFavorite ? '*' : '+'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -284,7 +339,7 @@ function DocumentDetailsScreen() {
               {pagesArray.map((page, index) => (
                 <View key={index} style={styles.pageSection}>
                   <Text style={styles.pageTitle}>
-                    📄 {page.pageKey.toUpperCase()}
+                    {page.pageKey.toUpperCase()}
                   </Text>
                   <Text style={styles.pageContent}>
                     {page.content}
@@ -294,17 +349,27 @@ function DocumentDetailsScreen() {
 
               {/* Processing Time Info */}
               <View style={styles.infoBox}>
+                {sourceFileName ? (
+                  <Text style={styles.infoText}>
+                    File: {sourceFileName}
+                  </Text>
+                ) : null}
                 <Text style={styles.infoText}>
-                  ⏱️ Thời gian xử lý: {summaryData.processing_time}
+                  Processing time: {summaryData.processing_time}
                 </Text>
                 <Text style={styles.infoText}>
-                  📊 Số trang: {summaryData.num_pages}
+                  Pages: {summaryData.num_pages}
                 </Text>
+                {ocrData ? (
+                  <Text style={styles.infoText}>
+                    OCR blocks: {ocrData.num_blocks ?? ocrData.ocr_results?.length ?? 0}
+                  </Text>
+                ) : null}
               </View>
             </>
           ) : (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Không có nội dung tóm tắt</Text>
+              <Text style={styles.emptyText}>No summary content</Text>
             </View>
           )}
         </View>
@@ -312,7 +377,7 @@ function DocumentDetailsScreen() {
 
       {/* Bookmark Section */}
       <View style={styles.bookmarkSection}>
-        <Text style={styles.bookmarkIcon}>🔖</Text>
+        <Text style={styles.bookmarkIcon}>-</Text>
       </View>
 
       {/* Action Buttons */}
@@ -321,14 +386,21 @@ function DocumentDetailsScreen() {
           style={[styles.actionButton, styles.backActionButton]}
           onPress={handleBack}
         >
-          <Text style={styles.actionButtonText}>‹ BACK</Text>
+          <Text style={styles.actionButtonText}>{'< BACK'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.actionButton, styles.flashcardButton]}
           onPress={handleCreateFlashcard}
+          disabled={isFlashcardProcessing}
         >
-          <Text style={styles.actionButtonText}>FLASHCARD ›</Text>
+          <Text style={styles.actionButtonText}>
+            {isFlashcardProcessing
+              ? 'CREATING...'
+              : flashcardSet
+              ? 'VIEW FLASHCARD >'
+              : 'CREATE FLASHCARD >'}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -338,7 +410,7 @@ function DocumentDetailsScreen() {
           style={styles.secondaryButton}
           onPress={handleDeleteDocument}
         >
-          <Text style={styles.secondaryButtonText}>🗑️ Delete Document</Text>
+          <Text style={styles.secondaryButtonText}>Delete Document</Text>
         </TouchableOpacity>
       </View>
 

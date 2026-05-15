@@ -17,6 +17,7 @@ export interface AuthContextType {
   signIn: (data: SignInRequest) => Promise<void>;
   logout: () => Promise<void>;
   checkAuthStatus: () => Promise<void>;
+  refreshUser: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -44,13 +45,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setError(null);
 
       const authData = await storageService.getAllAuthData();
+      const validAccessToken = await storageService.getAccessToken();
 
-      if (authData.accessToken && authData.userData) {
-        setAccessToken(authData.accessToken);
+      if (validAccessToken && authData.userData) {
+        const latestUserData = await authService.getCurrentUser(validAccessToken);
+        await storageService.saveUserData(latestUserData);
+        setAccessToken(validAccessToken);
         setRefreshToken(authData.refreshToken);
-        setUser(authData.userData);
+        setUser(latestUserData);
         setIsLoggedIn(true);
       } else {
+        await storageService.clearAuthData();
         setIsLoggedIn(false);
       }
     } catch (err) {
@@ -58,6 +63,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoggedIn(false);
     } finally {
       setAuthLoading(false);
+    }
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    try {
+      const validAccessToken = await storageService.getAccessToken();
+      if (!validAccessToken) {
+        return;
+      }
+
+      const latestUserData = await authService.getCurrentUser(validAccessToken);
+      await storageService.saveUserData(latestUserData);
+      setUser(latestUserData);
+      setAccessToken(validAccessToken);
+    } catch (err) {
+      console.error('Error refreshing user:', err);
     }
   }, []);
 
@@ -189,6 +210,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signIn,
     logout,
     checkAuthStatus,
+    refreshUser,
     clearError,
   };
 

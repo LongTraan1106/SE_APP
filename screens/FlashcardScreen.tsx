@@ -6,21 +6,16 @@ import {
   TouchableOpacity,
   ScrollView,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FlashcardIcon from '../assets/icons/flashcard.svg';
 import StarIcon from '../assets/icons/star.svg';
+import { CustomAlertModal, AlertButton } from '../components/CustomAlertModal';
+import { documentService, FlashcardListItem } from '../services/documentService';
 
 type FlashcardSection = 'totalSets' | 'favourite';
-
-interface FlashcardSet {
-  id: string;
-  title: string;
-  totalCards: number;
-  masteredCards: number;
-  isFavourite: boolean;
-}
 
 interface FlashcardActionCardProps {
   label: string;
@@ -31,16 +26,6 @@ interface FlashcardActionCardProps {
   onPress: () => void;
 }
 
-const SAMPLE_FLASHCARD_SETS: FlashcardSet[] = [
-  {
-    id: 'react-native-basics',
-    title: 'Something',
-    totalCards: 5,
-    masteredCards: 2,
-    isFavourite: true,
-  },
-];
-
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
@@ -50,6 +35,22 @@ function FlashcardScreen() {
   const { width, height } = useWindowDimensions();
   const [activeSection, setActiveSection] =
     React.useState<FlashcardSection>('totalSets');
+  const [sets, setSets] = React.useState<FlashcardListItem[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [deletingId, setDeletingId] = React.useState<number | null>(null);
+  const [alertModalVisible, setAlertModalVisible] = React.useState(false);
+  const [alertConfig, setAlertConfig] = React.useState<{
+    title: string;
+    message: string;
+    icon: string;
+    buttons: AlertButton[];
+  }>({
+    title: '',
+    message: '',
+    icon: '!',
+    buttons: [],
+  });
 
   const horizontalPadding = clamp(width * 0.055, 16, 28);
   const headerTop = Math.max(insets.top + 12, clamp(height * 0.04, 28, 48));
@@ -72,17 +73,82 @@ function FlashcardScreen() {
   const setMetaSize = clamp(width * 0.034, 12, 14);
   const setArrowSize = clamp(width * 0.065, 24, 32);
 
+  const loadFlashcards = React.useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await documentService.getFlashcardSets();
+      setSets(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot load flashcards';
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadFlashcards();
+    }, [loadFlashcards])
+  );
+
   const visibleSets =
     activeSection === 'favourite'
-      ? SAMPLE_FLASHCARD_SETS.filter(set => set.isFavourite)
-      : SAMPLE_FLASHCARD_SETS;
+      ? sets.filter(set => set.is_favorite)
+      : sets;
 
-  const handleOpenSet = (set: FlashcardSet) => {
+  const handleOpenSet = (set: FlashcardListItem) => {
     navigation.navigate('FlashcardDetail', {
-      setId: set.id,
+      flashcardId: set.id,
       title: set.title,
-      initialIndex: set.masteredCards,
+      initialIndex: 0,
     });
+  };
+
+  const handleDeleteSet = (set: FlashcardListItem) => {
+    setAlertConfig({
+      title: 'Delete Flashcard Set',
+      message: `Delete "${set.title}" and all of its flashcard data?`,
+      icon: '!',
+      buttons: [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => setAlertModalVisible(false),
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setAlertModalVisible(false);
+            try {
+              setDeletingId(set.id);
+              await documentService.deleteFlashcardSet(set.id);
+              setSets(current => current.filter(item => item.id !== set.id));
+            } catch (err) {
+              const message = err instanceof Error ? err.message : 'Cannot delete flashcard set';
+              setAlertConfig({
+                title: 'Error',
+                message,
+                icon: '!',
+                buttons: [
+                  {
+                    text: 'OK',
+                    onPress: () => setAlertModalVisible(false),
+                    style: 'default',
+                  },
+                ],
+              });
+              setAlertModalVisible(true);
+            } finally {
+              setDeletingId(null);
+            }
+          },
+        },
+      ],
+    });
+    setAlertModalVisible(true);
   };
 
   return (
@@ -156,7 +222,27 @@ function FlashcardScreen() {
         ]}
       >
         <View style={styles.setsContainer}>
-          {visibleSets.map(set => (
+          {isLoading ? (
+            <View style={styles.centerState}>
+              <ActivityIndicator size="large" color="#6B9071" />
+              <Text style={styles.stateText}>Loading flashcards...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.centerState}>
+              <Text style={styles.stateText}>{error}</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={loadFlashcards}>
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : visibleSets.length === 0 ? (
+            <View style={styles.centerState}>
+              <Text style={styles.stateText}>
+                {activeSection === 'favourite'
+                  ? 'No favourite flashcard sets yet.'
+                  : 'No flashcard sets yet.'}
+              </Text>
+            </View>
+          ) : visibleSets.map(set => (
             <TouchableOpacity
               key={set.id}
               style={[
@@ -189,7 +275,7 @@ function FlashcardScreen() {
                   {set.title}
                 </Text>
                 <Text style={[styles.setMeta, { fontSize: setMetaSize }]}>
-                  {set.masteredCards}/{set.totalCards} mastered
+                  {set.total_cards} cards{set.is_favorite ? ' • Favourite' : ''}
                 </Text>
               </View>
               <Text
@@ -203,10 +289,30 @@ function FlashcardScreen() {
               >
                 {'>'}
               </Text>
+              <TouchableOpacity
+                style={styles.deleteSetButton}
+                onPress={(event: any) => {
+                  event.stopPropagation?.();
+                  handleDeleteSet(set);
+                }}
+                disabled={deletingId === set.id}
+              >
+                <Text style={styles.deleteSetText}>
+                  {deletingId === set.id ? 'Deleting...' : 'Delete'}
+                </Text>
+              </TouchableOpacity>
             </TouchableOpacity>
           ))}
         </View>
       </ScrollView>
+      <CustomAlertModal
+        visible={alertModalVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        buttons={alertConfig.buttons}
+        onDismiss={() => setAlertModalVisible(false)}
+      />
     </View>
   );
 }
@@ -330,6 +436,42 @@ const styles = StyleSheet.create({
   },
   setArrow: {
     color: '#344E39',
+  },
+  deleteSetButton: {
+    backgroundColor: '#d32f2f',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginLeft: 8,
+  },
+  deleteSetText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  centerState: {
+    minHeight: 160,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  stateText: {
+    color: '#344E39',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  retryButton: {
+    backgroundColor: '#6B9071',
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    marginTop: 12,
+  },
+  retryText: {
+    color: '#fff',
+    fontWeight: '700',
   },
 });
 
