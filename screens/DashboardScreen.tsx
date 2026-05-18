@@ -83,6 +83,7 @@ function DashboardScreen() {
     <View style={styles.container}>
       <HeaderSection
         username={user?.username || 'User'}
+        avatarUrl={user?.avatar_url || null}
         documentCount={user?.documents_count || 0}
         flashcardCount={user?.flashcards_count || 0}
       />
@@ -155,12 +156,14 @@ function DashboardScreen() {
 
 interface HeaderSectionProps {
   username: string;
+  avatarUrl?: string | null;
   documentCount: number;
   flashcardCount: number;
 }
 
 function HeaderSection({
   username,
+  avatarUrl,
   documentCount,
   flashcardCount,
 }: HeaderSectionProps) {
@@ -169,19 +172,19 @@ function HeaderSection({
       <View style={styles.headerContent}>
         <View style={styles.avatarCircle}>
           <Image
-            source={require('../assets/fig.png')}
+            source={avatarUrl ? { uri: avatarUrl } : require('../assets/fig.png')}
             style={styles.avatarImage}
           />
         </View>
 
         <View style={styles.textContent}>
-          <Text style={styles.greetingText} numberOfLines={1}>
-            HELLO, {username.toUpperCase()}
+          <Text style={styles.greetingText} numberOfLines={2}>
+            Welcome, {username.toUpperCase()}
           </Text>
           <Text style={styles.subText}>What do you want to scan today?</Text>
           <View style={styles.userStatsRow}>
-            <Text style={styles.userStat}>{documentCount} documents</Text>
-            <Text style={styles.userStat}>{flashcardCount} sets</Text>
+            {/* <Text style={styles.userStat}>{documentCount} documents</Text>
+            <Text style={styles.userStat}>{flashcardCount} sets</Text> */}
           </View>
         </View>
       </View>
@@ -254,7 +257,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#E3EED4',
   },
   headerSection: {
-    backgroundColor: '#83A385',
+    backgroundColor: '#A9BFA2',
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 16,
@@ -288,6 +291,7 @@ const styles = StyleSheet.create({
   avatarImage: {
     width: 75,
     height: 75,
+    borderRadius: 37.5,
   },
   textContent: {
     flex: 1,
@@ -316,6 +320,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     fontSize: 12,
     fontWeight: '700',
+    textAlign: 'center',
   },
   scrollContent: {
     flex: 1,
@@ -371,6 +376,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#344E39',
+    textAlign: "center"
   },
   viewAllText: {
     color: '#344E39',

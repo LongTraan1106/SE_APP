@@ -15,7 +15,6 @@ import {
 import { Dropdown } from 'react-native-element-dropdown';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useNavigation } from '@react-navigation/native';
-import { CloudIcon } from '../components/CloudIcon';
 import { useAuth } from '../contexts/AuthContext';
 import OpenEyeIcon from '../assets/icons/open_eye.svg';
 import CloseEyeIcon from '../assets/icons/close_eye.svg';
@@ -25,6 +24,27 @@ const { width, height } = Dimensions.get('window');
 const roleData = [
   { label: 'Student', value: 'student' },
   { label: 'Teacher', value: 'teacher' },
+];
+
+const getGmailAddress = (localPart: string) =>
+  `${localPart.trim().replace(/@gmail\.com$/i, '').split('@')[0]}@gmail.com`;
+
+const getPasswordRules = (value: string) => [
+  {
+    key: 'length',
+    label: 'At least 6 characters',
+    valid: value.length >= 6,
+  },
+  {
+    key: 'uppercase',
+    label: 'One uppercase letter',
+    valid: /[A-Z]/.test(value),
+  },
+  {
+    key: 'number',
+    label: 'One number',
+    valid: /[0-9]/.test(value),
+  },
 ];
 
 function SignUpScreen() {
@@ -52,24 +72,89 @@ function SignUpScreen() {
     if (error) {
       clearError();
     }
+    // Clear only after the user edits a field, not immediately when auth error appears.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username, email, password, confirmPassword, role]);
 
-  const validateEmail = (email: string) => {
+  const validateEmail = (emailLocalPart: string) => {
     const emailRegex = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
-    return emailRegex.test(email);
+    return emailRegex.test(getGmailAddress(emailLocalPart));
   };
 
-  const validateUsername = (username: string) => {
+  const validateUsername = (usernameValue: string) => {
     const usernameRegex = /^[a-zA-Z0-9_]+$/;
-    return usernameRegex.test(username);
+    return usernameRegex.test(usernameValue);
   };
 
-  const validatePassword = (password: string) => {
+  const validatePassword = (passwordValue: string) => {
     // Min 6 chars, must have uppercase and number
-    if (password.length < 6) return false;
-    if (!/[A-Z]/.test(password)) return false;
-    if (!/[0-9]/.test(password)) return false;
+    if (passwordValue.length < 6) return false;
+    if (!/[A-Z]/.test(passwordValue)) return false;
+    if (!/[0-9]/.test(passwordValue)) return false;
     return true;
+  };
+
+  const getUsernameError = (value: string) => {
+    const nextUsername = value.trim();
+    if (!nextUsername) return '';
+    if (nextUsername.length < 3) return 'Username must be at least 3 characters';
+    if (nextUsername.length > 20) return 'Username must not exceed 20 characters';
+    if (!validateUsername(nextUsername)) {
+      return 'Username can only contain letters, numbers, and underscore';
+    }
+    return '';
+  };
+
+  const getEmailError = (value: string) => {
+    if (!value.trim()) return '';
+    if (!validateEmail(value)) return 'Use letters, numbers, dot, underscore, percent, plus, or dash';
+    return '';
+  };
+
+  const getPasswordError = (value: string) => {
+    if (!value) return '';
+    if (!validatePassword(value)) return 'Password does not meet all requirements';
+    return '';
+  };
+
+  const getConfirmPasswordError = (value: string, nextPassword = password) => {
+    if (!value) return '';
+    if (value !== nextPassword) return 'Passwords do not match';
+    return '';
+  };
+
+  const handleUsernameChange = (value: string) => {
+    setUsername(value);
+    setErrors(current => ({
+      ...current,
+      username: getUsernameError(value),
+    }));
+  };
+
+  const handleEmailChange = (value: string) => {
+    const sanitized = value.replace(/\s/g, '').replace(/@gmail\.com$/i, '').split('@')[0];
+    setEmail(sanitized);
+    setErrors(current => ({
+      ...current,
+      email: getEmailError(sanitized),
+    }));
+  };
+
+  const handlePasswordChange = (value: string) => {
+    setPassword(value);
+    setErrors(current => ({
+      ...current,
+      password: getPasswordError(value),
+      confirmPassword: getConfirmPasswordError(confirmPassword, value),
+    }));
+  };
+
+  const handleConfirmPasswordChange = (value: string) => {
+    setConfirmPassword(value);
+    setErrors(current => ({
+      ...current,
+      confirmPassword: getConfirmPasswordError(value),
+    }));
   };
 
   const validateInputs = (): boolean => {
@@ -94,7 +179,7 @@ function SignUpScreen() {
     if (!email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!validateEmail(email)) {
-      newErrors.email = 'Email must be in format: user@gmail.com';
+      newErrors.email = 'Please enter a valid Gmail username';
     }
 
     if (!password.trim()) {
@@ -131,7 +216,7 @@ function SignUpScreen() {
     try {
       await signUp({
         username: username.trim(),
-        email: email.trim(),
+        email: getGmailAddress(email),
         password: password,
         role: role,
       });
@@ -169,13 +254,31 @@ function SignUpScreen() {
     navigation.replace('SignIn');
   };
 
+  const passwordRules = getPasswordRules(password);
+
+  const renderRoleItem = (item: { label: string; value: string }) => {
+    const selected = role === item.value;
+    return (
+      <View style={[styles.roleItem, selected && styles.roleItemSelected]}>
+        <Text style={[styles.roleItemText, selected && styles.roleItemTextSelected]}>
+          {item.label}
+        </Text>
+        {selected && <Text style={styles.roleItemCheck}>✓</Text>}
+      </View>
+    );
+  };
+
   return (
     <>
       <KeyboardAwareScrollView
+        style={styles.container}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         enableOnAndroid={true}
-        extraScrollHeight={20}
+        enableAutomaticScroll={true}
+        enableResetScrollToCoords={false}
+        extraHeight={90}
+        extraScrollHeight={60}
         keyboardShouldPersistTaps="handled"
       >
           {/* Top Section with Welcome Text */}
@@ -212,9 +315,10 @@ function SignUpScreen() {
                 placeholder="Username"
                 placeholderTextColor="#3c433388"
                 value={username}
-                onChangeText={setUsername}
+                onChangeText={handleUsernameChange}
                 editable={!loading}
                 maxLength={20}
+                underlineColorAndroid="transparent"
               />
               {errors.username && (
                 <Text style={styles.errorText}>{errors.username}</Text>
@@ -223,16 +327,20 @@ function SignUpScreen() {
 
             {/* Email Input */}
             <View style={styles.inputWrapper}>
-              <TextInput
-                style={[styles.input, errors.email && styles.inputError]}
-                placeholder="Email address (@gmail.com)"
-                placeholderTextColor="#3c433388"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                editable={!loading}
-              />
+              <View style={[styles.gmailInputContainer, errors.email && styles.inputError]}>
+                <TextInput
+                  style={styles.gmailInput}
+                  placeholder="Email address"
+                  placeholderTextColor="#3c433388"
+                  value={email}
+                  onChangeText={handleEmailChange}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  editable={!loading}
+                  underlineColorAndroid="transparent"
+                />
+                <Text style={styles.gmailSuffix}>@gmail.com</Text>
+              </View>
               {errors.email && (
                 <Text style={styles.errorText}>{errors.email}</Text>
               )}
@@ -252,12 +360,16 @@ function SignUpScreen() {
                 activeColor={styles.dropdownActiveColor.backgroundColor}
                 data={roleData}
                 search={false}
-                maxHeight={200}
+                maxHeight={150}
                 labelField="label"
                 valueField="value"
                 placeholder="Select Role"
                 value={role}
-                onChange={(item) => setRole(item.value)}
+                onChange={(item) => {
+                  setRole(item.value);
+                  setErrors(current => ({ ...current, role: '' }));
+                }}
+                renderItem={renderRoleItem}
                 disable={loading}
               />
               {errors.role && (
@@ -270,12 +382,13 @@ function SignUpScreen() {
               <View style={[styles.passwordContainer, errors.password && styles.inputError]}>
                 <TextInput
                   style={styles.passwordInput}
-                  placeholder="Password (6+, Uppercase, Number)"
+                  placeholder="Password"
                   placeholderTextColor="#3c433388"
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={handlePasswordChange}
                   secureTextEntry={!showPassword}
                   editable={!loading}
+                  underlineColorAndroid="transparent"
                 />
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
@@ -288,9 +401,20 @@ function SignUpScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-              {errors.password && (
-                <Text style={styles.errorText}>{errors.password}</Text>
-              )}
+              <View style={styles.passwordRules}>
+                {passwordRules.map(rule => (
+                  <Text
+                    key={rule.key}
+                    style={[
+                      styles.passwordRuleText,
+                      rule.valid && styles.passwordRuleValid,
+                    ]}
+                  >
+                    {rule.valid ? '✓' : '•'} {rule.label}
+                  </Text>
+                ))}
+              </View>
+              {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
             </View>
 
             {/* Confirm Password Input */}
@@ -306,9 +430,10 @@ function SignUpScreen() {
                   placeholder="Confirm password"
                   placeholderTextColor="#3c433388"
                   value={confirmPassword}
-                  onChangeText={setConfirmPassword}
+                  onChangeText={handleConfirmPasswordChange}
                   secureTextEntry={!showConfirmPassword}
                   editable={!loading}
+                  underlineColorAndroid="transparent"
                 />
                 <TouchableOpacity
                   onPress={() => setShowConfirmPassword(!showConfirmPassword)}
@@ -387,10 +512,11 @@ function SignUpScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: '#789265',
   },
   scrollContent: {
     flexGrow: 1,
+    backgroundColor: '#789265',
   },
   topSection: {
     backgroundColor: '#FDF7DF',
@@ -427,15 +553,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#789265',
   },
   formSection: {
-    backgroundColor: '#789265',
+    backgroundColor: '#A9B9A8',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(233, 239, 225, 0.55)',
     paddingTop: 10,
     paddingBottom: 30,
     paddingHorizontal: 30,
     alignItems: 'center',
     minHeight: height * 0.63,
-    overflow: 'visible',
+    overflow: 'hidden',
   },
   formTitle: {
     paddingTop: 20,
@@ -476,9 +604,36 @@ const styles = StyleSheet.create({
     fontFamily: 'System',
     width: width * 0.8,
   },
+  gmailInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E9EFE1',
+    borderWidth: 1.1,
+    borderColor: '#79876E',
+    borderRadius: 16,
+    paddingLeft: 18,
+    paddingRight: 12,
+    width: width * 0.8,
+    minHeight: 52,
+  },
+  gmailInput: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 0,
+    fontSize: 15,
+    color: '#344E39',
+    fontFamily: 'System',
+  },
+  gmailSuffix: {
+    marginLeft: 6,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+    color: '#5C735B',
+  },
   dropdown: {
     backgroundColor: '#E9EFE1',
-    borderWidth: 1.3,
+    borderWidth: 1.1,
     borderColor: '#79876E',
     borderRadius: 16,
     paddingHorizontal: 18,
@@ -492,8 +647,8 @@ const styles = StyleSheet.create({
   },
   dropdownSelectedText: {
     fontSize: 15,
-    color: '#79876E',
-    fontWeight: '500',
+    color: '#344E39',
+    fontWeight: '700',
   },
   dropdownInputSearch: {
     borderRadius: 8,
@@ -507,21 +662,20 @@ const styles = StyleSheet.create({
     tintColor: '#79876E',
   },
   dropdownContainer: {
-    backgroundColor: '#E9EFE1',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#79876E',
+    backgroundColor: '#F3F7EE',
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(121, 135, 110, 0.45)',
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
+    elevation: 2,
   },
   dropdownItemContainer: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#D5E3CF',
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   dropdownItemText: {
     fontSize: 14,
@@ -529,13 +683,40 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   dropdownActiveColor: {
-    backgroundColor: '#BED2BC',
+    backgroundColor: '#DDE9D8',
+  },
+  roleItem: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(121, 135, 110, 0.22)',
+  },
+  roleItemSelected: {
+    backgroundColor: '#DDE9D8',
+  },
+  roleItemText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+    color: '#2D5A3D',
+  },
+  roleItemTextSelected: {
+    fontWeight: '800',
+  },
+  roleItemCheck: {
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '800',
+    color: '#2D5A3D',
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#E9EFE1',
-    borderWidth: 1.3,
+    borderWidth: 1.1,
     borderColor: '#79876E',
     borderRadius: 16,
     paddingHorizontal: 18,
@@ -547,6 +728,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#79876E',
     fontFamily: 'System',
+  },
+  passwordRules: {
+    width: width * 0.8,
+    paddingHorizontal: 6,
+    marginTop: 7,
+    gap: 3,
+  },
+  passwordRuleText: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '600',
+    color: 'rgba(52, 78, 57, 0.64)',
+  },
+  passwordRuleValid: {
+    color: '#2D5A3D',
   },
   eyeIcon: {
     // padding: 8,

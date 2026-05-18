@@ -4,6 +4,7 @@ import {
   Alert,
   Dimensions,
   FlatList,
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -860,7 +861,11 @@ function MemberRow({
   return (
     <View style={styles.memberRow}>
       <View style={styles.memberAvatar}>
-        <Text style={styles.memberAvatarText}>{member.username.slice(0, 1).toUpperCase()}</Text>
+        {member.avatar_url ? (
+          <Image source={{ uri: member.avatar_url }} style={styles.memberAvatarImage} />
+        ) : (
+          <Text style={styles.memberAvatarText}>{member.username.slice(0, 1).toUpperCase()}</Text>
+        )}
       </View>
       <View style={styles.memberInfo}>
         <Text style={styles.memberName}>{member.username}</Text>
@@ -990,7 +995,11 @@ function InviteModal({
                   activeOpacity={0.75}
                 >
                   <View style={styles.memberAvatar}>
-                    <Text style={styles.memberAvatarText}>{item.username.slice(0, 1).toUpperCase()}</Text>
+                    {item.avatar_url ? (
+                      <Image source={{ uri: item.avatar_url }} style={styles.memberAvatarImage} />
+                    ) : (
+                      <Text style={styles.memberAvatarText}>{item.username.slice(0, 1).toUpperCase()}</Text>
+                    )}
                   </View>
                   <View style={styles.memberInfo}>
                     <Text style={styles.memberName}>{item.username}</Text>
@@ -1564,6 +1573,11 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '800',
     color: '#2C4936',
+  },
+  memberAvatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
   },
   memberInfo: {
     flex: 1,

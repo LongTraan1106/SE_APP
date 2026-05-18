@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import DashboardScreen from '../screens/DashboardScreen';
 import DocumentsScreen from '../screens/DocumentsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import EditProfileScreen from '../screens/EditProfileScreen';
 import CameraScreen from '../screens/CameraScreen';
 import DocumentScanResultScreen from '../screens/DocumentScanResultScreen';
 import SummaryScreen from '../screens/SummaryScreen';
@@ -139,6 +140,7 @@ export function RootNavigator() {
               <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
               <Stack.Screen name="SearchGroups" component={SearchGroupScreen} />
               <Stack.Screen name="FlashcardDetail" component={FlashcardDetailScreen} />
+              <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             </Stack.Group>
           </>
         )}

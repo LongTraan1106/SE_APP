@@ -59,8 +59,19 @@ export interface SummaryData {
   pages: { [key: string]: string };
   full_summary: string;
   structured_summary?: Array<OCRBlock & { summary?: string }> | null;
+  key_takeaways?: string[];
   processing_time: string;
   num_pages: number;
+}
+
+export interface TakeawayResponse {
+  success: boolean;
+  message: string;
+  data: {
+    key_takeaways: string[];
+    processing_time: string;
+    total_takeaways: number;
+  };
 }
 
 export interface ProcessedDocumentData {
@@ -79,6 +90,7 @@ export interface DocumentResponse {
       ocr_data?: OCRData | null;
       extracted_text?: string | null;
       summary_data: SummaryData;
+      key_takeaways?: string[] | null;
     tags?: string[];
     is_favorite: boolean;
     created_at: string;
@@ -336,7 +348,7 @@ class DocumentService {
    */
   async processOCRAndSummary(filePath: string): Promise<ProcessedDocumentData> {
     try {
-      console.log('[Document Processing] Starting OCR + Summary flow...');
+      console.log('[Document Processing] Starting OCR + Summary + Takeaways flow...');
 
       // Step 1: OCR
       const ocrData = await this.processOCR(filePath);
@@ -344,11 +356,17 @@ class DocumentService {
       // Step 2: Summary
       const summaryData = await this.processSummary(ocrData);
 
+      // Step 3: Key takeaways
+      const keyTakeaways = await this.processTakeaways(summaryData, ocrData);
+
       console.log('[Document Processing] Complete!');
 
       return {
         ocrData,
-        summaryData,
+        summaryData: {
+          ...summaryData,
+          key_takeaways: keyTakeaways,
+        },
       };
     } catch (error) {
       console.error('[Document Processing Error]:', error);
@@ -359,6 +377,57 @@ class DocumentService {
   /**
    * Xác định MIME type từ file extension
    */
+  async processTakeaways(
+    summaryData: SummaryData,
+    ocrData?: OCRData | null,
+    llmEndpoint?: string,
+    modelName?: string
+  ): Promise<string[]> {
+    try {
+      const accessToken = await storageService.getAccessToken();
+
+      if (!accessToken) {
+        throw new Error('Unauthorized: No access token found');
+      }
+
+      const payload: any = {
+        summary_data: summaryData,
+      };
+
+      if (ocrData?.ocr_results?.length) {
+        payload.ocr_results = ocrData.ocr_results;
+      }
+
+      if (llmEndpoint) {
+        payload.llm_endpoint = llmEndpoint;
+      }
+
+      if (modelName) {
+        payload.model_name = modelName;
+      }
+
+      const response = await fetch(`${API_URL}/api/takeaways/process`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const takeawayResponse: TakeawayResponse = await response.json();
+
+      if (!response.ok || !takeawayResponse.success) {
+        throw new Error(getApiErrorMessage(takeawayResponse, 'Failed to create key takeaways'));
+      }
+
+      return takeawayResponse.data.key_takeaways || [];
+    } catch (error) {
+      console.error('[Takeaways Error]:', error);
+      return [];
+    }
+  }
+
   async processFlashcards(ocrData: OCRData): Promise<FlashcardProcessData> {
     try {
       const accessToken = await storageService.getAccessToken();
@@ -613,6 +682,7 @@ class DocumentService {
         source_file_name: ocrData?.file_name,
         extracted_text: ocrData?.extracted_text,
         summary_data: summaryData,
+        key_takeaways: summaryData.key_takeaways || [],
         tags: tags || [],
       };
 

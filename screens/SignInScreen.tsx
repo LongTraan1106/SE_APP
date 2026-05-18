@@ -33,6 +33,8 @@ function SignInScreen() {
     if (error) {
       clearError();
     }
+    // Clear only after the user edits a field, not immediately when auth error appears.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email, password]);
 
   const validateInputs = (): boolean => {
@@ -50,6 +52,20 @@ function SignInScreen() {
 
     setErrors(newErrors);
     return !newErrors.email && !newErrors.password;
+  };
+
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+    if (errors.email) {
+      setErrors(current => ({ ...current, email: '' }));
+    }
+  };
+
+  const handlePasswordChange = (value: string) => {
+    setPassword(value);
+    if (errors.password) {
+      setErrors(current => ({ ...current, password: '' }));
+    }
   };
 
   const handleSignIn = async () => {
@@ -82,10 +98,14 @@ function SignInScreen() {
 
   return (
     <KeyboardAwareScrollView
+      style={styles.container}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
       enableOnAndroid={true}
-      extraScrollHeight={20}
+      enableAutomaticScroll={true}
+      enableResetScrollToCoords={false}
+      extraHeight={120}
+      extraScrollHeight={90}
       keyboardShouldPersistTaps="handled"
     >
         {/* Top Section with Welcome Text */}
@@ -122,11 +142,11 @@ function SignInScreen() {
                 placeholder="Email address"
                 placeholderTextColor="#3c433388"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={handleEmailChange}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 editable={!loading}
-                placeholderTextColor="#3c433388"
+                underlineColorAndroid="transparent"
               />
               {errors.email && (
                 <Text style={styles.errorText}>{errors.email}</Text>
@@ -141,10 +161,10 @@ function SignInScreen() {
                   placeholder="Password"
                   placeholderTextColor="#3c433388"
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={handlePasswordChange}
                   secureTextEntry={!showPassword}
                   editable={!loading}
-                  placeholderTextColor="#3c433388"
+                  underlineColorAndroid="transparent"
                 />
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
@@ -200,6 +220,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    backgroundColor: '#789265',
   },
   topSection: {
     backgroundColor: '#FDF7DF',

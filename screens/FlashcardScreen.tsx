@@ -1,44 +1,55 @@
 import React from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  useWindowDimensions,
   ActivityIndicator,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FlashcardIcon from '../assets/icons/flashcard.svg';
 import StarIcon from '../assets/icons/star.svg';
+import StarFillIcon from '../assets/icons/start_fill.svg';
+import TrashIcon from '../assets/icons/trash_can.svg';
 import { CustomAlertModal, AlertButton } from '../components/CustomAlertModal';
 import { documentService, FlashcardListItem } from '../services/documentService';
 
-type FlashcardSection = 'totalSets' | 'favourite';
-
-interface FlashcardActionCardProps {
-  label: string;
-  icon: React.ReactNode;
-  height: number;
-  textSize: number;
-  isActive: boolean;
-  onPress: () => void;
-}
-
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
+  Math.max(min, Math.min(max, value));
+
+const PAGE_PADDING = clamp(SCREEN_WIDTH * 0.06, 22, 30);
+const IS_COMPACT_HEIGHT = SCREEN_HEIGHT < 720;
+const HEADER_HEIGHT = clamp(SCREEN_HEIGHT * 0.085, 84, 112);
+const SEARCH_WIDTH = Math.min(SCREEN_WIDTH - PAGE_PADDING * 2.1, 548);
+const SEGMENT_WIDTH = Math.min(SCREEN_WIDTH - PAGE_PADDING * 3.2, 430);
+const SEARCH_HEIGHT = clamp(SCREEN_HEIGHT * 0.062, 48, 54);
+const SEGMENT_HEIGHT = clamp(SCREEN_HEIGHT * 0.056, 42, 48);
+const SET_CARD_MIN_HEIGHT = clamp(SCREEN_HEIGHT * 0.09, 72, 84);
+const SET_CARD_RADIUS = 12;
+const SET_ICON_BOX = clamp(SCREEN_WIDTH * 0.115, 40, 48);
+const SET_ICON_SIZE = clamp(SET_ICON_BOX * 0.5, 20, 24);
+const ACTION_BUTTON_SIZE = clamp(SCREEN_WIDTH * 0.082, 30, 34);
+const ACTION_ICON_SIZE = clamp(ACTION_BUTTON_SIZE * 0.58, 18, 20);
+
+type FlashcardSection = 'all' | 'favourite';
 
 function FlashcardScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
+  const windowDimensions = useWindowDimensions();
   const [activeSection, setActiveSection] =
-    React.useState<FlashcardSection>('totalSets');
+    React.useState<FlashcardSection>('all');
   const [sets, setSets] = React.useState<FlashcardListItem[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [deletingId, setDeletingId] = React.useState<number | null>(null);
+  const [updatingFavoriteId, setUpdatingFavoriteId] = React.useState<number | null>(null);
   const [alertModalVisible, setAlertModalVisible] = React.useState(false);
   const [alertConfig, setAlertConfig] = React.useState<{
     title: string;
@@ -51,27 +62,6 @@ function FlashcardScreen() {
     icon: '!',
     buttons: [],
   });
-
-  const horizontalPadding = clamp(width * 0.055, 16, 28);
-  const headerTop = Math.max(insets.top + 12, clamp(height * 0.04, 28, 48));
-  const headerHeight = clamp(height * 0.13, 84, 112);
-  const headerRadius = clamp(width * 0.035, 12, 18);
-  const headerTitleSize = clamp(width * 0.072, 24, 32);
-  const headerBottom = clamp(height * 0.024, 14, 24);
-  const actionCardHeight = clamp(height * 0.085, 64, 88);
-  const actionGap = clamp(width * 0.04, 12, 24);
-  const actionIconSize = clamp(width * 0.065, 22, 30);
-  const actionTextSize = clamp(width * 0.043, 15, 19);
-  const actionBottom = clamp(height * 0.022, 12, 22);
-  const dividerHeight = clamp(height * 0.01, 6, 10);
-  const contentPaddingTop = clamp(height * 0.02, 12, 22);
-  const setCardMinHeight = clamp(height * 0.09, 68, 88);
-  const setCardRadius = clamp(width * 0.035, 12, 16);
-  const setIconSize = clamp(width * 0.065, 24, 34);
-  const setIconBox = clamp(width * 0.13, 46, 58);
-  const setTitleSize = clamp(width * 0.045, 16, 20);
-  const setMetaSize = clamp(width * 0.034, 12, 14);
-  const setArrowSize = clamp(width * 0.065, 24, 32);
 
   const loadFlashcards = React.useCallback(async () => {
     setIsLoading(true);
@@ -93,10 +83,40 @@ function FlashcardScreen() {
     }, [loadFlashcards])
   );
 
-  const visibleSets =
-    activeSection === 'favourite'
-      ? sets.filter(set => set.is_favorite)
-      : sets;
+  const [searchText, setSearchText] = React.useState('');
+
+  const visibleSets = React.useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+
+    return sets.filter(set => {
+      const matchesSection = activeSection === 'all' || set.is_favorite;
+      if (!matchesSection) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      return (
+        set.title.toLowerCase().includes(query) ||
+        (set.source_file_name || '').toLowerCase().includes(query) ||
+        (set.tags || []).some(tag => tag.toLowerCase().includes(query))
+      );
+    });
+  }, [activeSection, searchText, sets]);
+
+  const emptyMessage = React.useMemo(() => {
+    if (searchText.trim()) {
+      return 'No flashcard sets match your search.';
+    }
+
+    if (activeSection === 'favourite') {
+      return 'No favourite flashcard sets yet.';
+    }
+
+    return 'No flashcard sets yet.';
+  }, [activeSection, searchText]);
 
   const handleOpenSet = (set: FlashcardListItem) => {
     navigation.navigate('FlashcardDetail', {
@@ -104,6 +124,40 @@ function FlashcardScreen() {
       title: set.title,
       initialIndex: 0,
     });
+  };
+
+  const showError = (message: string) => {
+    setAlertConfig({
+      title: 'Error',
+      message,
+      icon: '!',
+      buttons: [
+        {
+          text: 'OK',
+          onPress: () => setAlertModalVisible(false),
+          style: 'default',
+        },
+      ],
+    });
+    setAlertModalVisible(true);
+  };
+
+  const handleToggleFavorite = async (set: FlashcardListItem) => {
+    try {
+      const nextStatus = !set.is_favorite;
+      setUpdatingFavoriteId(set.id);
+      await documentService.toggleFlashcardFavorite(set.id, nextStatus);
+      setSets(current =>
+        current.map(item =>
+          item.id === set.id ? { ...item, is_favorite: nextStatus } : item
+        )
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot update favourite';
+      showError(message);
+    } finally {
+      setUpdatingFavoriteId(null);
+    }
   };
 
   const handleDeleteSet = (set: FlashcardListItem) => {
@@ -128,19 +182,7 @@ function FlashcardScreen() {
               setSets(current => current.filter(item => item.id !== set.id));
             } catch (err) {
               const message = err instanceof Error ? err.message : 'Cannot delete flashcard set';
-              setAlertConfig({
-                title: 'Error',
-                message,
-                icon: '!',
-                buttons: [
-                  {
-                    text: 'OK',
-                    onPress: () => setAlertModalVisible(false),
-                    style: 'default',
-                  },
-                ],
-              });
-              setAlertModalVisible(true);
+              showError(message);
             } finally {
               setDeletingId(null);
             }
@@ -152,159 +194,85 @@ function FlashcardScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View
         style={[
           styles.headerSection,
-          {
-            height: headerHeight,
-            marginTop: headerTop,
-            marginHorizontal: horizontalPadding,
-            marginBottom: headerBottom,
-            borderRadius: headerRadius,
-          },
+          { marginHorizontal: clamp(windowDimensions.width * 0.06, 22, 30) },
         ]}
       >
-        <Text style={[styles.headerTitle, { fontSize: headerTitleSize }]}>
-          FLASHCARD
-        </Text>
+        <Text style={styles.headerTitle}>FLASHCARD</Text>
       </View>
 
-      <View
-        style={[
-          styles.sectionCards,
-          {
-            paddingHorizontal: horizontalPadding,
-            columnGap: actionGap,
-            marginBottom: actionBottom,
-          },
-        ]}
-      >
-        <FlashcardActionCard
-          label="Total sets"
-          isActive={activeSection === 'totalSets'}
-          onPress={() => setActiveSection('totalSets')}
-          height={actionCardHeight}
-          textSize={actionTextSize}
-          icon={<FlashcardIcon width={actionIconSize} height={actionIconSize} />}
+      <View style={styles.searchContainer}>
+        <SearchIcon />
+        <TextInput
+          style={styles.searchInput}
+          value={searchText}
+          onChangeText={setSearchText}
+          placeholder="Search"
+          placeholderTextColor="#8D9A8E"
+          autoCapitalize="none"
+          underlineColorAndroid="transparent"
+          selectionColor="#5F8A68"
         />
-        <FlashcardActionCard
+      </View>
+
+      <View style={styles.segmentContainer}>
+        <SegmentButton
+          label="All Sets"
+          active={activeSection === 'all'}
+          onPress={() => setActiveSection('all')}
+        />
+        <SegmentButton
           label="Favourite"
-          isActive={activeSection === 'favourite'}
+          active={activeSection === 'favourite'}
           onPress={() => setActiveSection('favourite')}
-          height={actionCardHeight}
-          textSize={actionTextSize}
-          icon={<StarIcon width={actionIconSize} height={actionIconSize} />}
         />
       </View>
-
-      <View
-        style={[
-          styles.divider,
-          {
-            height: dividerHeight,
-            marginHorizontal: horizontalPadding + 8,
-            borderRadius: dividerHeight / 2,
-          },
-        ]}
-      />
 
       <ScrollView
         style={styles.content}
-        showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.contentContainer,
-          {
-            paddingTop: contentPaddingTop,
-            paddingHorizontal: horizontalPadding,
-            paddingBottom: 100 + insets.bottom,
-          },
+          { paddingBottom: 100 + insets.bottom },
         ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.setsContainer}>
-          {isLoading ? (
-            <View style={styles.centerState}>
-              <ActivityIndicator size="large" color="#6B9071" />
-              <Text style={styles.stateText}>Loading flashcards...</Text>
-            </View>
-          ) : error ? (
-            <View style={styles.centerState}>
-              <Text style={styles.stateText}>{error}</Text>
-              <TouchableOpacity style={styles.retryButton} onPress={loadFlashcards}>
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          ) : visibleSets.length === 0 ? (
-            <View style={styles.centerState}>
-              <Text style={styles.stateText}>
-                {activeSection === 'favourite'
-                  ? 'No favourite flashcard sets yet.'
-                  : 'No flashcard sets yet.'}
-              </Text>
-            </View>
-          ) : visibleSets.map(set => (
-            <TouchableOpacity
-              key={set.id}
-              style={[
-                styles.setCard,
-                {
-                  minHeight: setCardMinHeight,
-                  borderRadius: setCardRadius,
-                  paddingHorizontal: clamp(width * 0.04, 14, 18),
-                  paddingVertical: clamp(height * 0.016, 10, 16),
-                },
-              ]}
-              activeOpacity={0.85}
-              onPress={() => handleOpenSet(set)}
-            >
-              <View
-                style={[
-                  styles.setIconWrap,
-                  {
-                    width: setIconBox,
-                    height: setIconBox,
-                    borderRadius: setIconBox * 0.28,
-                    marginRight: clamp(width * 0.032, 10, 14),
-                  },
-                ]}
-              >
-                <FlashcardIcon width={setIconSize} height={setIconSize} />
-              </View>
-              <View style={styles.setInfo}>
-                <Text style={[styles.setTitle, { fontSize: setTitleSize }]}>
-                  {set.title}
-                </Text>
-                <Text style={[styles.setMeta, { fontSize: setMetaSize }]}>
-                  {set.total_cards} cards{set.is_favorite ? ' • Favourite' : ''}
-                </Text>
-              </View>
-              <Text
-                style={[
-                  styles.setArrow,
-                  {
-                    fontSize: setArrowSize,
-                    marginLeft: clamp(width * 0.025, 8, 12),
-                  },
-                ]}
-              >
-                {'>'}
-              </Text>
-              <TouchableOpacity
-                style={styles.deleteSetButton}
-                onPress={(event: any) => {
-                  event.stopPropagation?.();
-                  handleDeleteSet(set);
-                }}
-                disabled={deletingId === set.id}
-              >
-                <Text style={styles.deleteSetText}>
-                  {deletingId === set.id ? 'Deleting...' : 'Delete'}
-                </Text>
-              </TouchableOpacity>
+        {isLoading ? (
+          <View style={styles.centerState}>
+            <ActivityIndicator size="large" color="#6F9A78" />
+            <Text style={styles.stateText}>Loading flashcards...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.centerState}>
+            <Text style={styles.stateText}>{error}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={loadFlashcards}>
+              <Text style={styles.retryText}>Retry</Text>
             </TouchableOpacity>
-          ))}
-        </View>
+          </View>
+        ) : visibleSets.length === 0 ? (
+          <View style={styles.centerState}>
+            <Text style={styles.stateText}>{emptyMessage}</Text>
+          </View>
+        ) : (
+          <View style={styles.setsContainer}>
+            {visibleSets.map(set => (
+              <FlashcardSetItem
+                key={set.id}
+                set={set}
+                deleting={deletingId === set.id}
+                updatingFavorite={updatingFavoriteId === set.id}
+                onPress={() => handleOpenSet(set)}
+                onToggleFavorite={() => handleToggleFavorite(set)}
+                onDelete={() => handleDeleteSet(set)}
+              />
+            ))}
+          </View>
+        )}
       </ScrollView>
+
       <CustomAlertModal
         visible={alertModalVisible}
         title={alertConfig.title}
@@ -317,29 +285,105 @@ function FlashcardScreen() {
   );
 }
 
-function FlashcardActionCard({
+function SearchIcon() {
+  return (
+    <View style={styles.searchIcon}>
+      <View style={styles.searchIconCircle} />
+      <View style={styles.searchIconHandle} />
+    </View>
+  );
+}
+
+function SegmentButton({
   label,
-  icon,
-  height,
-  textSize,
-  isActive,
+  active,
   onPress,
-}: FlashcardActionCardProps) {
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
   return (
     <TouchableOpacity
-      style={[
-        styles.actionCard,
-        {
-          height,
-          borderRadius: height * 0.18,
-        },
-        isActive && styles.actionCardActive,
-      ]}
-      activeOpacity={0.85}
+      style={[styles.segmentButton, active && styles.segmentButtonActive]}
+      activeOpacity={0.82}
       onPress={onPress}
     >
-      <View style={styles.cardIcon}>{icon}</View>
-      <Text style={[styles.cardLabel, { fontSize: textSize }]}>{label}</Text>
+      <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function FlashcardSetItem({
+  set,
+  deleting,
+  updatingFavorite,
+  onPress,
+  onToggleFavorite,
+  onDelete,
+}: {
+  set: FlashcardListItem;
+  deleting: boolean;
+  updatingFavorite: boolean;
+  onPress: () => void;
+  onToggleFavorite: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.setCard}
+      activeOpacity={0.78}
+      onPress={onPress}
+    >
+      <View style={styles.setIconWrap}>
+        <FlashcardIcon width={SET_ICON_SIZE} height={SET_ICON_SIZE} />
+      </View>
+
+      <View style={styles.setInfo}>
+        <Text style={styles.setTitle} numberOfLines={2}>
+          {set.title}
+        </Text>
+        <Text style={styles.setMeta} numberOfLines={1}>
+          {set.total_cards} cards
+          {set.source_file_name ? ` | ${set.source_file_name}` : ''}
+        </Text>
+      </View>
+
+      <View style={styles.actionsContainer}>
+        <TouchableOpacity
+          style={[styles.actionButton, updatingFavorite && styles.actionDisabled]}
+          onPress={(event: any) => {
+            event.stopPropagation?.();
+            onToggleFavorite();
+          }}
+          disabled={updatingFavorite}
+          activeOpacity={0.75}
+        >
+          {set.is_favorite ? (
+            <StarFillIcon width={ACTION_ICON_SIZE} height={ACTION_ICON_SIZE} />
+          ) : (
+            <StarIcon width={ACTION_ICON_SIZE} height={ACTION_ICON_SIZE} />
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionButton, deleting && styles.actionDisabled]}
+          onPress={(event: any) => {
+            event.stopPropagation?.();
+            onDelete();
+          }}
+          disabled={deleting}
+          activeOpacity={0.75}
+        >
+          {deleting ? (
+            <ActivityIndicator size="small" color="#2C4936" />
+          ) : (
+            <TrashIcon width={ACTION_ICON_SIZE} height={ACTION_ICON_SIZE} />
+          )}
+        </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -350,128 +394,195 @@ const styles = StyleSheet.create({
     backgroundColor: '#E3EED4',
   },
   headerSection: {
-    backgroundColor: '#83A385',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
+    height: HEADER_HEIGHT,
     justifyContent: 'center',
     alignItems: 'center',
+    // marginTop: IS_COMPACT_HEIGHT ? 22 : 28,
+    marginHorizontal: PAGE_PADDING,
+    borderRadius: 15,
+    backgroundColor: '#88A88A',
+    shadowColor: '#1B2F22',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.11,
+    shadowRadius: 5,
+    elevation: 3,
   },
   headerTitle: {
+    fontSize: clamp(SCREEN_WIDTH * 0.058, 22, 28),
+    lineHeight: clamp(SCREEN_WIDTH * 0.071, 28, 34),
     fontWeight: '800',
     color: '#FFFFFF',
   },
-  sectionCards: {
+  searchContainer: {
+    alignSelf: 'center',
+    width: SEARCH_WIDTH,
+    height: SEARCH_HEIGHT,
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: IS_COMPACT_HEIGHT ? 10 : 12,
+    paddingLeft: 18,
+    paddingRight: 14,
+    borderRadius: 15,
+    borderWidth: 0,
+    backgroundColor: 'rgba(255,255,255,0.78)',
+    shadowOpacity: 0,
+    elevation: 0,
   },
-  actionCard: {
+  searchIcon: {
+    width: 24,
+    height: 24,
+    marginRight: 14,
+  },
+  searchIconCircle: {
+    width: 17,
+    height: 17,
+    borderRadius: 8.5,
+    borderWidth: 2.4,
+    borderColor: '#2C4936',
+  },
+  searchIconHandle: {
+    position: 'absolute',
+    width: 11,
+    height: 2.4,
+    borderRadius: 2,
+    backgroundColor: '#2C4936',
+    right: 2,
+    bottom: 4,
+    transform: [{ rotate: '45deg' }],
+  },
+  searchInput: {
     flex: 1,
-    backgroundColor: '#AEC3B0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.16,
-    shadowRadius: 7,
-  },
-  actionCardActive: {
-    backgroundColor: '#B3C6B6',
-  },
-  cardIcon: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 3,
-  },
-  cardLabel: {
+    minWidth: 0,
+    paddingVertical: 0,
+    fontSize: clamp(SCREEN_WIDTH * 0.041, 15, 17),
+    lineHeight: clamp(SCREEN_WIDTH * 0.052, 20, 23),
     fontWeight: '500',
-    color: '#142D23',
+    color: '#2C4936',
   },
-  divider: {
-    backgroundColor: '#6B826B',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
+  segmentContainer: {
+    alignSelf: 'center',
+    width: SEGMENT_WIDTH,
+    height: SEGMENT_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: IS_COMPACT_HEIGHT ? 14 : 18,
+    padding: 3,
+    borderRadius: 12,
+    backgroundColor: '#AEC4B2',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  segmentButton: {
+    flex: 1,
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 9,
+  },
+  segmentButtonActive: {
+    backgroundColor: 'rgba(255,255,255,0.82)',
+  },
+  segmentText: {
+    fontSize: clamp(SCREEN_WIDTH * 0.038, 14, 16),
+    lineHeight: clamp(SCREEN_WIDTH * 0.05, 19, 21),
+    fontWeight: '500',
+    color: '#173729',
+  },
+  segmentTextActive: {
+    fontWeight: '700',
   },
   content: {
     flex: 1,
+    marginTop: IS_COMPACT_HEIGHT ? 16 : 20,
   },
   contentContainer: {
     flexGrow: 1,
+    paddingHorizontal: PAGE_PADDING,
   },
   setsContainer: {
-    rowGap: 12,
+    rowGap: 10,
   },
   setCard: {
-    backgroundColor: '#AEC3B0',
+    minHeight: SET_CARD_MIN_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 5,
+    justifyContent: 'space-between',
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    borderRadius: SET_CARD_RADIUS,
+    backgroundColor: '#AEC3B0',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   setIconWrap: {
-    backgroundColor: '#C5D8C0',
+    width: SET_ICON_BOX,
+    height: SET_ICON_BOX,
+    borderRadius: 11,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#C5D8C0',
+    marginRight: 10,
   },
   setInfo: {
     flex: 1,
+    minWidth: 0,
+    paddingRight: 10,
   },
   setTitle: {
-    fontWeight: '700',
-    color: '#173528',
-    marginBottom: 4,
+    fontSize: clamp(SCREEN_WIDTH * 0.039, 14, 16),
+    lineHeight: clamp(SCREEN_WIDTH * 0.052, 19, 22),
+    fontWeight: '800',
+    color: '#1B3A2D',
   },
   setMeta: {
-    fontWeight: '500',
-    color: '#344E39',
-  },
-  setArrow: {
-    color: '#344E39',
-  },
-  deleteSetButton: {
-    backgroundColor: '#d32f2f',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginLeft: 8,
-  },
-  deleteSetText: {
-    color: '#fff',
+    marginTop: 5,
     fontSize: 12,
-    fontWeight: '700',
+    lineHeight: 16,
+    fontWeight: '600',
+    color: '#344E39',
   },
-  centerState: {
-    minHeight: 160,
+  actionsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  actionButton: {
+    width: ACTION_BUTTON_SIZE,
+    height: ACTION_BUTTON_SIZE,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    borderRadius: 9,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  actionDisabled: {
+    opacity: 0.55,
+  },
+  centerState: {
+    minHeight: SCREEN_HEIGHT * 0.34,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: PAGE_PADDING,
   },
   stateText: {
+    marginTop: 10,
     color: '#344E39',
-    fontSize: 14,
+    fontSize: 15,
+    lineHeight: 22,
     fontWeight: '600',
     textAlign: 'center',
-    marginTop: 10,
   },
   retryButton: {
-    backgroundColor: '#6B9071',
-    borderRadius: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    marginTop: 12,
+    height: 42,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: '#88A88A',
   },
   retryText: {
-    color: '#fff',
-    fontWeight: '700',
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
 });
 

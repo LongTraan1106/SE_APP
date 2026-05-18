@@ -24,6 +24,7 @@ export interface UserResponse {
   username: string;
   email: string;
   role: string;
+  avatar_url?: string | null;
   documents_count: number;
   flashcards_count: number;
   groups_count: number;
@@ -65,6 +66,30 @@ export interface CurrentUserResponse {
   success: boolean;
   message: string;
   data: UserResponse;
+}
+
+export interface UpdateProfileRequest {
+  username?: string;
+  email?: string;
+  current_password?: string;
+  new_password?: string;
+}
+
+export interface UpdateProfileResponse {
+  success: boolean;
+  message: string;
+  data: UserResponse;
+}
+
+export interface VerifyPasswordResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface AvatarUploadFile {
+  uri: string;
+  name: string;
+  type: string;
 }
 
 class AuthService {
@@ -231,6 +256,100 @@ class AuthService {
       return data.data;
     } catch (error) {
       console.error('Get current user error:', error);
+      throw error;
+    }
+  }
+
+  async verifyCurrentPassword(
+    accessToken: string,
+    currentPassword: string
+  ): Promise<VerifyPasswordResponse> {
+    try {
+      const response = await fetch(
+        `${API_URL}/api/auth/me/verify-password?access_token=${encodeURIComponent(accessToken)}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            current_password: currentPassword,
+          }),
+        }
+      );
+
+      const data: VerifyPasswordResponse = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Current password is incorrect');
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Verify password error:', error);
+      throw error;
+    }
+  }
+
+  async updateProfile(
+    accessToken: string,
+    request: UpdateProfileRequest
+  ): Promise<UserResponse> {
+    try {
+      const response = await fetch(
+        `${API_URL}/api/auth/me/profile?access_token=${encodeURIComponent(accessToken)}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify(request),
+        }
+      );
+
+      const data: UpdateProfileResponse = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to update profile');
+      }
+
+      return data.data;
+    } catch (error) {
+      console.error('Update profile error:', error);
+      throw error;
+    }
+  }
+
+  async uploadAvatar(
+    accessToken: string,
+    file: AvatarUploadFile
+  ): Promise<UserResponse> {
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file as any);
+
+      const response = await fetch(
+        `${API_URL}/api/auth/me/avatar?access_token=${encodeURIComponent(accessToken)}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: formData,
+        }
+      );
+
+      const data: UpdateProfileResponse = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to upload avatar');
+      }
+
+      return data.data;
+    } catch (error) {
+      console.error('Upload avatar error:', error);
       throw error;
     }
   }

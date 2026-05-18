@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -58,17 +59,20 @@ function ProfileScreen() {
       >
         <View style={styles.profileCard}>
           <TouchableOpacity style={styles.bellButton} activeOpacity={0.75}>
-            <BellIcon width={18} height={22} />
+            <BellIcon width={25} height={25} />
           </TouchableOpacity>
 
           <View style={styles.avatarFrame}>
-            <AvatarIcon width={PROFILE_AVATAR_SIZE * 0.54} height={PROFILE_AVATAR_SIZE * 0.64} />
+            {user?.avatar_url ? (
+              <Image source={{ uri: user.avatar_url }} style={styles.avatarImage} />
+            ) : (
+              <AvatarIcon width={PROFILE_AVATAR_SIZE * 0.54} height={PROFILE_AVATAR_SIZE * 0.64} />
+            )}
           </View>
 
           <View style={styles.profileInfo}>
             <Text style={styles.nameText} numberOfLines={1}>
               {username}
-              <Text style={styles.nameSuffix}>(name)</Text>
             </Text>
             <Text style={styles.infoText} numberOfLines={1}>
               <Text style={styles.infoStrong}>Role: </Text>
@@ -78,7 +82,11 @@ function ProfileScreen() {
               <Text style={styles.infoStrong}>Email: </Text>
               {email}
             </Text>
-            <TouchableOpacity style={styles.editButton} activeOpacity={0.75}>
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => navigation.navigate('EditProfile')}
+              activeOpacity={0.75}
+            >
               <Text style={styles.editButtonText}>Edit profile</Text>
             </TouchableOpacity>
           </View>
@@ -86,13 +94,13 @@ function ProfileScreen() {
 
         <View style={styles.statsPanel}>
           <StatItem
-            icon={<DocsIcon width={36} height={36} />}
+            icon={<DocsIcon width={33} height={33} />}
             label="Docs"
             value={user?.documents_count ?? 23}
           />
           <View style={styles.statDivider} />
           <StatItem
-            icon={<FlashcardIcon width={42} height={42} />}
+            icon={<FlashcardIcon width={33} height={33} />}
             label="Flashcards"
             value={user?.flashcards_count ?? 14}
           />
@@ -211,6 +219,11 @@ const styles = StyleSheet.create({
     borderColor: '#203E2F',
     marginRight: Math.max(16, Math.min(28, SCREEN_WIDTH * 0.05)),
   },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: PROFILE_AVATAR_SIZE / 2,
+  },
   profileInfo: {
     flex: 1,
     minWidth: 0,
@@ -242,8 +255,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 19,
-    borderWidth: 2,
-    borderColor: '#111111',
+    borderWidth: 1,
+    borderColor: '#445946',
     marginTop: 12,
   },
   editButtonText: {

@@ -1,22 +1,38 @@
 import React from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Dimensions,
   ActivityIndicator,
   Alert,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import Staricon from '../assets/icons/star.svg';
-import Trashicon from '../assets/icons/trash_can.svg';
-import { documentService, DocumentListItem } from '../services/documentService';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import StarIcon from '../assets/icons/star.svg';
+import StarFillIcon from '../assets/icons/start_fill.svg';
+import TrashIcon from '../assets/icons/trash_can.svg';
+import { documentService } from '../services/documentService';
 
-const { width } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const clamp = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
 
-type TabType = 'recently' | 'search' | 'favourite';
+const PAGE_PADDING = clamp(SCREEN_WIDTH * 0.06, 22, 30);
+const IS_COMPACT_HEIGHT = SCREEN_HEIGHT < 720;
+const HEADER_HEIGHT = clamp(SCREEN_HEIGHT * 0.085, 84, 112);
+const SEARCH_WIDTH = Math.min(SCREEN_WIDTH - PAGE_PADDING * 2.1, 548);
+const SEGMENT_WIDTH = Math.min(SCREEN_WIDTH - PAGE_PADDING * 3.2, 430);
+const DOCUMENT_CARD_RADIUS = 12;
+const SEARCH_HEIGHT = clamp(SCREEN_HEIGHT * 0.062, 48, 54);
+const SEGMENT_HEIGHT = clamp(SCREEN_HEIGHT * 0.056, 42, 48);
+const DOCUMENT_MIN_HEIGHT = clamp(SCREEN_HEIGHT * 0.09, 72, 84);
+const ACTION_BUTTON_SIZE = clamp(SCREEN_WIDTH * 0.082, 30, 34);
+const ACTION_ICON_SIZE = clamp(ACTION_BUTTON_SIZE * 0.58, 18, 20);
+
+type TabType = 'all' | 'favourite';
 
 interface Document {
   id: number;
@@ -27,35 +43,28 @@ interface Document {
 
 function DocumentsScreen() {
   const navigation = useNavigation<any>();
-  const [activeTab, setActiveTab] = React.useState<TabType>('recently');
+  const [activeTab, setActiveTab] = React.useState<TabType>('all');
   const [documents, setDocuments] = React.useState<Document[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Load documents when component mounts
   React.useEffect(() => {
     loadDocuments();
   }, []);
 
-  // Reload documents when screen is focused
   useFocusEffect(
     React.useCallback(() => {
-      console.log('[Documents Screen] Screen focused, reloading documents');
       loadDocuments();
-      return () => {
-        // Cleanup if needed
-      };
     }, [])
   );
+
+  const [searchText, setSearchText] = React.useState('');
 
   const loadDocuments = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      console.log('[Documents Screen] Loading documents...');
       const docs = await documentService.getDocuments();
-      
-      // Transform API response to UI format
       const transformedDocs: Document[] = docs.map(doc => ({
         id: doc.id,
         title: doc.title,
@@ -63,169 +72,162 @@ function DocumentsScreen() {
         isFavourite: doc.is_favorite,
       }));
 
-      // Sort by date (newest first)
       transformedDocs.sort((a, b) => b.id - a.id);
-
       setDocuments(transformedDocs);
-      console.log('[Documents Screen] Loaded', transformedDocs.length, 'documents');
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Không thể tải tài liệu';
+      const errorMsg = err instanceof Error ? err.message : 'Cannot load documents';
       setError(errorMsg);
-      console.error('[Documents Screen] Error loading documents:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const getFilteredDocuments = (): Document[] => {
-    switch (activeTab) {
-      case 'favourite':
-        return documents.filter(doc => doc.isFavourite);
-      case 'search':
-        // TODO: Implement search functionality
-        return documents;
-      case 'recently':
-      default:
-        return documents;
+  const filteredDocuments = React.useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+
+    return documents.filter(doc => {
+      const matchesTab = activeTab === 'all' || doc.isFavourite;
+      if (!matchesTab) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      return (
+        doc.title.toLowerCase().includes(query) ||
+        (doc.tags || []).some(tag => tag.toLowerCase().includes(query))
+      );
+    });
+  }, [activeTab, documents, searchText]);
+
+  const emptyMessage = React.useMemo(() => {
+    if (searchText.trim()) {
+      return 'No documents match your search.';
     }
-  };
+
+    if (activeTab === 'favourite') {
+      return 'No favourite documents yet.';
+    }
+
+    return 'No documents yet. Start by scanning or importing one.';
+  }, [activeTab, searchText]);
 
   const handleDeleteDocument = async (id: number) => {
-    Alert.alert(
-      'Xóa Tài Liệu',
-      'Bạn có chắc muốn xóa tài liệu này?',
-      [
-        {
-          text: 'Hủy',
-          onPress: () => {},
-          style: 'cancel',
+    Alert.alert('Delete document', 'Are you sure you want to delete this document?', [
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+      {
+        text: 'Delete',
+        onPress: async () => {
+          try {
+            await documentService.deleteDocument(id);
+            setDocuments(docs => docs.filter(doc => doc.id !== id));
+            Alert.alert('Success', 'Document deleted.');
+          } catch (deleteError) {
+            const errorMsg =
+              deleteError instanceof Error ? deleteError.message : 'Cannot delete document';
+            Alert.alert('Error', errorMsg);
+          }
         },
-        {
-          text: 'Xóa',
-          onPress: async () => {
-            try {
-              console.log('[Documents Screen] Deleting document', id);
-              await documentService.deleteDocument(id);
-              
-              // Remove from local state
-              setDocuments(docs => docs.filter(doc => doc.id !== id));
-              Alert.alert('Thành công', 'Tài liệu đã được xóa');
-            } catch (error) {
-              const errorMsg = error instanceof Error ? error.message : 'Lỗi xóa tài liệu';
-              Alert.alert('Lỗi', errorMsg);
-            }
-          },
-          style: 'destructive',
-        },
-      ]
-    );
+        style: 'destructive',
+      },
+    ]);
   };
 
   const handleToggleFavourite = async (id: number) => {
     try {
-      const doc = documents.find(d => d.id === id);
-      if (!doc) return;
+      const doc = documents.find(item => item.id === id);
+      if (!doc) {
+        return;
+      }
 
-      const newFavoriteStatus = !doc.isFavourite;
-      console.log('[Documents Screen] Toggling favorite for', id);
-      
-      await documentService.toggleFavorite(id, newFavoriteStatus);
+      const nextStatus = !doc.isFavourite;
+      await documentService.toggleFavorite(id, nextStatus);
 
-      // Update local state
       setDocuments(docs =>
-        docs.map(d =>
-          d.id === id ? { ...d, isFavourite: newFavoriteStatus } : d
+        docs.map(item =>
+          item.id === id ? { ...item, isFavourite: nextStatus } : item
         )
       );
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Lỗi cập nhật yêu thích';
-      Alert.alert('Lỗi', errorMsg);
+    } catch (toggleError) {
+      const errorMsg =
+        toggleError instanceof Error ? toggleError.message : 'Cannot update favourite';
+      Alert.alert('Error', errorMsg);
     }
   };
 
   const handleOpenDocument = (documentId: number) => {
-    console.log('[Documents Screen] Opening document', documentId);
     navigation.navigate('DocumentDetails', { documentId });
   };
 
   return (
     <View style={styles.container}>
-      {/* Header Section */}
       <View style={styles.headerSection}>
         <Text style={styles.headerTitle}>DOCUMENTS</Text>
       </View>
 
-      {/* Tab Navigation */}
-      <View style={styles.tabContainer}>
-        {(['recently', 'search', 'favourite'] as const).map(tab => (
-          <TouchableOpacity
-            key={tab}
-            style={[
-              styles.tabButton,
-              activeTab === tab && styles.tabButtonActive,
-            ]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === tab && styles.tabTextActive,
-              ]}
-            >
-              {tab === 'recently'
-                ? 'Recently'
-                : tab === 'search'
-                ? 'Search'
-                : 'Favourite'}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.searchContainer}>
+        <SearchIcon />
+        <TextInput
+          style={styles.searchInput}
+          value={searchText}
+          onChangeText={setSearchText}
+          placeholder="Search"
+          placeholderTextColor="#8D9A8E"
+          autoCapitalize="none"
+          underlineColorAndroid="transparent"
+          selectionColor="#5F8A68"
+        />
       </View>
 
-      {/* Main Content */}
+      <View style={styles.segmentContainer}>
+        <SegmentButton
+          label="All Docs"
+          active={activeTab === 'all'}
+          onPress={() => setActiveTab('all')}
+        />
+        <SegmentButton
+          label="Favourite"
+          active={activeTab === 'favourite'}
+          onPress={() => setActiveTab('favourite')}
+        />
+      </View>
+
       <ScrollView
         style={styles.scrollContent}
+        contentContainerStyle={styles.scrollContentContainer}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Divider */}
-        <View style={styles.divider} />
-
-        {/* Loading State */}
         {isLoading && (
           <View style={styles.centerContent}>
-            <ActivityIndicator size="large" color="#6B9071" />
-            <Text style={styles.loadingText}>Đang tải tài liệu...</Text>
+            <ActivityIndicator size="large" color="#6F9A78" />
+            <Text style={styles.loadingText}>Loading documents...</Text>
           </View>
         )}
 
-        {/* Error State */}
         {error && !isLoading && (
           <View style={styles.centerContent}>
-            <Text style={styles.errorText}>❌ {error}</Text>
-            <TouchableOpacity
-              style={styles.retryButton}
-              onPress={loadDocuments}
-            >
-              <Text style={styles.retryButtonText}>Thử Lại</Text>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={loadDocuments}>
+              <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Empty State */}
-        {!isLoading && !error && getFilteredDocuments().length === 0 && (
+        {!isLoading && !error && filteredDocuments.length === 0 && (
           <View style={styles.centerContent}>
-            <Text style={styles.emptyText}>
-              {activeTab === 'favourite'
-                ? '📭 Chưa có tài liệu yêu thích'
-                : '📭 Chưa có tài liệu nào'}
-            </Text>
+            <Text style={styles.emptyText}>{emptyMessage}</Text>
           </View>
         )}
 
-        {/* Documents List */}
-        {!isLoading && !error && getFilteredDocuments().length > 0 && (
+        {!isLoading && !error && filteredDocuments.length > 0 && (
           <View style={styles.documentsContainer}>
-            {getFilteredDocuments().map(doc => (
+            {filteredDocuments.map(doc => (
               <DocumentItem
                 key={doc.id}
                 document={doc}
@@ -237,14 +239,43 @@ function DocumentsScreen() {
           </View>
         )}
 
-        {/* Extra space for bottom nav */}
         <View style={styles.bottomSpace} />
       </ScrollView>
     </View>
   );
 }
 
-// ===== DOCUMENT ITEM COMPONENT =====
+function SearchIcon() {
+  return (
+    <View style={styles.searchIcon}>
+      <View style={styles.searchIconCircle} />
+      <View style={styles.searchIconHandle} />
+    </View>
+  );
+}
+
+function SegmentButton({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.segmentButton, active && styles.segmentButtonActive]}
+      onPress={onPress}
+      activeOpacity={0.82}
+    >
+      <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 interface DocumentItemProps {
   document: Document;
   onPress: () => void;
@@ -259,247 +290,270 @@ function DocumentItem({
   onToggleFavourite,
 }: DocumentItemProps) {
   return (
-    <TouchableOpacity 
-      style={styles.documentItemContainer}
+    <TouchableOpacity
+      style={styles.documentItem}
       onPress={onPress}
-      activeOpacity={0.7}
+      activeOpacity={0.78}
     >
-      <View style={styles.documentItem}>
-        {/* Left Content */}
-        <View style={styles.documentContent}>
-          <Text style={styles.documentTitle}>{document.title}</Text>
-          {document.tags.length > 0 && (
-            <View style={styles.tagsContainer}>
-              {document.tags.map((tag, index) => (
-                <View key={index} style={styles.tag}>
-                  <Text style={styles.tagText}>{tag}</Text>
-                </View>
-              ))}
-            </View>
+      <View style={styles.documentContent}>
+        <Text style={styles.documentTitle} numberOfLines={2}>
+          {document.title}
+        </Text>
+        {(document.tags || []).length > 0 && (
+          <View style={styles.tagsContainer}>
+            {(document.tags || []).map((tag, index) => (
+              <View key={`${tag}-${index}`} style={styles.tag}>
+                <Text style={styles.tagText}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
+      <View style={styles.actionsContainer}>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={event => {
+            event.stopPropagation();
+            onToggleFavourite();
+          }}
+          activeOpacity={0.75}
+        >
+          {document.isFavourite ? (
+            <StarFillIcon width={ACTION_ICON_SIZE} height={ACTION_ICON_SIZE} />
+          ) : (
+            <StarIcon width={ACTION_ICON_SIZE} height={ACTION_ICON_SIZE} />
           )}
-        </View>
-
-        {/* Right Actions */}
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              onToggleFavourite();
-            }}
-          >
-              <Staricon
-                width={20}
-                height={20}
-              />
-
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.actionButton} 
-            onPress={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-          >
-            <Trashicon
-              width={20}
-              height={20}
-            />
-          </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={event => {
+            event.stopPropagation();
+            onDelete();
+          }}
+          activeOpacity={0.75}
+        >
+          <TrashIcon width={ACTION_ICON_SIZE} height={ACTION_ICON_SIZE} />
+        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
 }
 
-
-
-// ===== STYLES =====
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#E3EED4',
+    justifyContent: 'flex-start',
   },
-
-  // Header Styles
   headerSection: {
-    backgroundColor: '#83A385',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    marginTop: 60,
-    marginLeft: 15,
-    marginRight: 15,
-    marginBottom: 15,
-    borderRadius: 16,
-    elevation: 8,
-    shadowRadius: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    height: HEADER_HEIGHT,
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: IS_COMPACT_HEIGHT ? 22 : 34,
+    marginHorizontal: PAGE_PADDING,
+    borderRadius: 15,
+    backgroundColor: '#88A88A',
+    shadowColor: '#1B2F22',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.11,
+    shadowRadius: 5,
+    elevation: 3,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: clamp(SCREEN_WIDTH * 0.058, 22, 28),
+    lineHeight: clamp(SCREEN_WIDTH * 0.071, 28, 34),
+    fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 1,
   },
-
-  // Tab Navigation
-  tabContainer: {
+  searchContainer: {
+    alignSelf: 'center',
+    width: SEARCH_WIDTH,
+    height: SEARCH_HEIGHT,
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 10,
-    marginBottom: 15,
+    alignItems: 'center',
+    marginTop: IS_COMPACT_HEIGHT ? 10 : 12,
+    paddingLeft: 18,
+    paddingRight: 14,
+    borderRadius: 15,
+    borderWidth: 0,
+    backgroundColor: 'rgba(255,255,255,0.78)',
+    shadowOpacity: 0,
+    elevation: 0,
   },
-  tabButton: {
+  searchIcon: {
+    width: 24,
+    height: 24,
+    marginRight: 14,
+  },
+  searchIconCircle: {
+    width: 17,
+    height: 17,
+    borderRadius: 8.5,
+    borderWidth: 2.4,
+    borderColor: '#2C4936',
+  },
+  searchIconHandle: {
+    position: 'absolute',
+    width: 11,
+    height: 2.4,
+    borderRadius: 2,
+    backgroundColor: '#2C4936',
+    right: 2,
+    bottom: 4,
+    transform: [{ rotate: '45deg' }],
+  },
+  searchInput: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    backgroundColor: '#AEC3B0',
+    minWidth: 0,
+    paddingVertical: 0,
+    fontSize: clamp(SCREEN_WIDTH * 0.041, 15, 17),
+    lineHeight: clamp(SCREEN_WIDTH * 0.052, 20, 23),
+    fontWeight: '500',
+    color: '#2C4936',
+  },
+  segmentContainer: {
+    alignSelf: 'center',
+    width: SEGMENT_WIDTH,
+    height: SEGMENT_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: IS_COMPACT_HEIGHT ? 14 : 18,
+    padding: 3,
+    borderRadius: 12,
+    backgroundColor: '#AEC4B2',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  segmentButton: {
+    flex: 1,
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    borderRadius: 9,
   },
-  tabButtonActive: {
-    backgroundColor: '#97C09B',
+  segmentButtonActive: {
+    backgroundColor: 'rgba(255,255,255,0.82)',
   },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2D5341',
+  segmentText: {
+    fontSize: clamp(SCREEN_WIDTH * 0.038, 14, 16),
+    lineHeight: clamp(SCREEN_WIDTH * 0.05, 19, 21),
+    fontWeight: '500',
+    color: '#173729',
   },
-  tabTextActive: {
-    color: '#2D5341',
+  segmentTextActive: {
+    fontWeight: '700',
   },
-
-  // Scroll Content
   scrollContent: {
     flex: 1,
+    marginTop: IS_COMPACT_HEIGHT ? 16 : 20,
   },
-
-  // Divider
-  divider: {
-    height: 6,
-    marginLeft: 15,
-    marginRight: 15,
-    borderRadius: 3,
-    backgroundColor: '#6B826B',
-    marginBottom: 15,
+  scrollContentContainer: {
+    minHeight: SCREEN_HEIGHT * 0.54,
   },
-
-  // Documents Container
   documentsContainer: {
-    paddingHorizontal: 15,
+    paddingHorizontal: PAGE_PADDING,
+    paddingBottom: 8,
   },
-
-  // Document Item Container (TouchableOpacity wrapper)
-  documentItemContainer: {
-    width: '100%',
-  },
-
-  // Document Item
   documentItem: {
+    minHeight: DOCUMENT_MIN_HEIGHT,
     flexDirection: 'row',
-    backgroundColor: '#AEC3B0',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 12,
-    justifyContent: 'space-between',
     alignItems: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 3,
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    borderRadius: DOCUMENT_CARD_RADIUS,
+    backgroundColor: '#AEC3B0',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   documentContent: {
     flex: 1,
-    marginRight: 10,
+    minWidth: 0,
+    paddingRight: 10,
   },
   documentTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: clamp(SCREEN_WIDTH * 0.039, 14, 16),
+    lineHeight: clamp(SCREEN_WIDTH * 0.052, 19, 22),
+    fontWeight: '800',
     color: '#1B3A2D',
-    marginBottom: 8,
   },
   tagsContainer: {
     flexDirection: 'row',
-    gap: 8,
     flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
   },
   tag: {
-    backgroundColor: '#6B826B',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    minHeight: 21,
+    justifyContent: 'center',
     borderRadius: 12,
+    backgroundColor: '#6B826B',
+    paddingHorizontal: 9,
   },
   tagText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700',
     color: '#FFFFFF',
   },
-
-  // Actions Container
   actionsContainer: {
     flexDirection: 'row',
-    gap: 5,
     alignItems: 'center',
+    gap: 6,
   },
   actionButton: {
-    width: 36,
-    height: 36,
+    width: ACTION_BUTTON_SIZE,
+    height: ACTION_BUTTON_SIZE,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 10,
-    backgroundColor: 'rgba(255, 252, 252, 0.2)',
+    borderRadius: 9,
+    backgroundColor: 'rgba(255,255,255,0.22)',
   },
-  // Bottom Space
-  bottomSpace: {
-    height: 20,
-  },
-  // Loading and Error States
   centerContent: {
-    flex: 1,
+    minHeight: SCREEN_HEIGHT * 0.34,
     justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 200,
+    paddingHorizontal: PAGE_PADDING,
   },
   loadingText: {
-    fontSize: 16,
-    color: '#666',
     marginTop: 10,
-    fontWeight: '500',
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '600',
+    color: '#5D6F5F',
   },
   errorText: {
-    fontSize: 16,
-    color: '#d32f2f',
-    fontWeight: '600',
-    marginBottom: 15,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '700',
+    color: '#A23A34',
     textAlign: 'center',
   },
   emptyText: {
-    fontSize: 16,
-    color: '#999',
-    fontWeight: '500',
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '600',
+    color: '#6B776D',
+    textAlign: 'center',
   },
   retryButton: {
+    height: 42,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 14,
     paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: '#6B9071',
-    borderRadius: 8,
-    marginTop: 10,
+    borderRadius: 12,
+    backgroundColor: '#88A88A',
   },
   retryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  bottomSpace: {
+    height: 24,
   },
 });
 

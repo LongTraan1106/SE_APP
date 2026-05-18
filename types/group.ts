@@ -11,6 +11,7 @@ export interface GroupMember {
   user_id: number;
   username: string;
   email: string;
+  avatar_url?: string | null;
   member_role: 'owner' | 'admin' | 'member';
   joined_at: string;
 }
@@ -128,6 +129,7 @@ export interface UserSearchResult {
   username: string;
   email: string;
   role: string;
+  avatar_url?: string | null;
 }
 
 export interface UserSearchResponse {

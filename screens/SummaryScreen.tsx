@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -11,6 +11,11 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Line, Path } from 'react-native-svg';
+import SparkleIcon from '../assets/icons/AI.svg';
+import TargetIcon from '../assets/icons/target.svg';
+import FlashcardIcon from '../assets/icons/flash_card.svg';
+import SaveIcon from '../assets/icons/save.svg';
 import { CustomAlertModal, AlertButton } from '../components/CustomAlertModal';
 import {
   documentService,
@@ -19,9 +24,32 @@ import {
   SummaryData,
 } from '../services/documentService';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
+const clamp = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
+
+const GREEN = '#587956';
+const BG = '#F2F8EC';
+const PAGE_PADDING = clamp(width * 0.04, 12, 18);
+const CARD_RADIUS = clamp(width * 0.035, 12, 16);
+const CARD_PADDING = clamp(width * 0.04, 14, 18);
+const CARD_TITLE_SIZE = clamp(width * 0.047, 17, 20);
+const BODY_FONT = clamp(width * 0.039, 14, 16);
+const BODY_LINE = clamp(BODY_FONT * 1.55, 21, 25);
+const SMALL_FONT = clamp(width * 0.034, 12, 14);
+const ACTION_HEIGHT = clamp(height * 0.058, 46, 54);
+const ICON_SIZE = clamp(width * 0.066, 23, 29);
 
 type PendingAction = 'saveDocument' | 'createFlashcard' | null;
+
+function BackIcon({ color = GREEN }: { color?: string }) {
+  return (
+    <Svg width={26} height={26} viewBox="0 0 30 30" fill="none">
+      <Path d="M18.5 7L10.5 15L18.5 23" stroke={color} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+      <Line x1={11.5} y1={15} x2={24} y2={15} stroke={color} strokeWidth={3} strokeLinecap="round" />
+    </Svg>
+  );
+}
 
 function SummaryScreen() {
   const insets = useSafeAreaInsets();
@@ -47,14 +75,44 @@ function SummaryScreen() {
     buttons: [],
   });
   const [documentTitle, setDocumentTitle] = useState('');
+  const [keyTakeaways, setKeyTakeaways] = useState<string[]>(summaryData?.key_takeaways || []);
   const [showTitleInput, setShowTitleInput] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [savedDocument, setSavedDocument] = useState<DocumentResponse['data'] | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isCreatingFlashcards, setIsCreatingFlashcards] = useState(false);
   const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
+  const [isGeneratingTakeaways, setIsGeneratingTakeaways] = useState(false);
 
   const isBusy = isSaving || isCreatingFlashcards || isGeneratingTitle;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadTakeaways = async () => {
+      if (!summaryData || summaryData.key_takeaways?.length || keyTakeaways.length) {
+        return;
+      }
+
+      setIsGeneratingTakeaways(true);
+      try {
+        const generated = await documentService.processTakeaways(summaryData, ocrData || null);
+        if (isMounted) {
+          setKeyTakeaways(generated);
+        }
+      } finally {
+        if (isMounted) {
+          setIsGeneratingTakeaways(false);
+        }
+      }
+    };
+
+    loadTakeaways();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [summaryData, ocrData, keyTakeaways.length]);
 
   const handleBack = () => {
     navigation.goBack();
@@ -95,9 +153,20 @@ function SummaryScreen() {
       return savedDocument;
     }
 
+    const takeaways = keyTakeaways.length
+      ? keyTakeaways
+      : await documentService.processTakeaways(summaryData, ocrData || null);
+
+    if (!keyTakeaways.length && takeaways.length) {
+      setKeyTakeaways(takeaways);
+    }
+
     const savedDoc = await documentService.saveDocument(
       title,
-      summaryData,
+      {
+        ...summaryData,
+        key_takeaways: takeaways,
+      },
       ocrData || null,
       ['Summary']
     );
@@ -148,13 +217,7 @@ function SummaryScreen() {
         title: 'Save Failed',
         message,
         icon: '!',
-        buttons: [
-          {
-            text: 'OK',
-            onPress: () => setAlertModalVisible(false),
-            style: 'default',
-          },
-        ],
+        buttons: [{ text: 'OK', onPress: () => setAlertModalVisible(false), style: 'default' }],
       });
       setAlertModalVisible(true);
     } finally {
@@ -174,13 +237,7 @@ function SummaryScreen() {
         title: 'Cannot Create Flashcards',
         message: 'OCR data is missing. Please scan or summarize this document again.',
         icon: '!',
-        buttons: [
-          {
-            text: 'OK',
-            onPress: () => setAlertModalVisible(false),
-            style: 'default',
-          },
-        ],
+        buttons: [{ text: 'OK', onPress: () => setAlertModalVisible(false), style: 'default' }],
       });
       setAlertModalVisible(true);
       return;
@@ -211,13 +268,7 @@ function SummaryScreen() {
         title: 'Error',
         message,
         icon: '!',
-        buttons: [
-          {
-            text: 'OK',
-            onPress: () => setAlertModalVisible(false),
-            style: 'default',
-          },
-        ],
+        buttons: [{ text: 'OK', onPress: () => setAlertModalVisible(false), style: 'default' }],
       });
       setAlertModalVisible(true);
     } finally {
@@ -254,81 +305,115 @@ function SummaryScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack}>
-          <Text style={styles.backButton}>{'< BACK'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>SUMMARY</Text>
-        <View style={{ width: 72 }} />
-      </View>
-
       <ScrollView
         ref={scrollViewRef}
-        style={styles.contentArea}
-        showsVerticalScrollIndicator
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.contentInner}>
-          {pagesArray.length > 0 ? (
-            <>
-              {pagesArray.map((page, index) => (
-                <View key={index} style={styles.pageSection}>
-                  <Text style={styles.pageTitle}>{page.pageKey.toUpperCase()}</Text>
-                  <Text style={styles.pageContent}>{page.content}</Text>
-                </View>
-              ))}
+        <View style={styles.summaryCard}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardTitleRow}>
+              <SparkleIcon width={ICON_SIZE} height={ICON_SIZE} />
+              <Text style={styles.cardTitle}>AI Summary</Text>
+            </View>
+            <View style={styles.pagePill}>
+              <Text style={styles.pagePillText}>
+                {summaryData.num_pages || pagesArray.length || 1} pages
+              </Text>
+            </View>
+          </View>
 
-              <View style={styles.infoBox}>
-                <Text style={styles.infoText}>Processing time: {summaryData.processing_time}</Text>
-                <Text style={styles.infoText}>Pages: {summaryData.num_pages}</Text>
-                {ocrData ? (
-                  <Text style={styles.infoText}>
-                    OCR blocks: {ocrData.num_blocks ?? ocrData.ocr_results?.length ?? 0}
-                  </Text>
-                ) : null}
-              </View>
+          {pagesArray.length ? (
+            <>
+              <Text style={styles.summaryText}>{pagesArray[0].content}</Text>
+              {pagesArray.length > 1 ? (
+                <View style={styles.extraPages}>
+                  {pagesArray.slice(1).map((page, index) => (
+                    <View key={page.pageKey} style={styles.extraPageBlock}>
+                      <Text style={styles.extraPageTitle}>Page {index + 2}</Text>
+                      <Text style={styles.extraPageText}>{page.content}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+              <View style={styles.dashedRule} />
             </>
           ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No summary content</Text>
-            </View>
+            <Text style={styles.emptyText}>No summary content</Text>
           )}
+        </View>
+
+        <View style={styles.takeawayCard}>
+          <View style={styles.cardTitleRow}>
+            <TargetIcon width={ICON_SIZE} height={ICON_SIZE} />
+            <Text style={styles.cardTitle}>Key takeaways</Text>
+          </View>
+
+          <View style={styles.takeawayList}>
+            {isGeneratingTakeaways ? (
+              <View style={styles.inlineLoading}>
+                <ActivityIndicator size="small" color={GREEN} />
+                <Text style={styles.inlineLoadingText}>Generating key takeaways...</Text>
+              </View>
+            ) : keyTakeaways.length ? (
+              keyTakeaways.map((item, index) => (
+                <View key={`${item}-${index}`} style={styles.takeawayItem}>
+                  <View style={styles.takeawayBullet} />
+                  <Text style={styles.takeawayText}>{item}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>No key takeaways generated yet.</Text>
+            )}
+          </View>
         </View>
       </ScrollView>
 
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.backActionButton]}
-          onPress={handleBack}
-          disabled={isBusy}
-        >
-          <Text style={styles.actionButtonText}>{'< BACK'}</Text>
-        </TouchableOpacity>
+      <View style={styles.actionsWrap}>
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.previousButton}
+            onPress={handleBack}
+            disabled={isBusy}
+            activeOpacity={0.85}
+          >
+            <BackIcon />
+            <Text style={styles.previousButtonText}>Previous</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.flashcardButton, isBusy && styles.buttonDisabled]}
+            onPress={handleCreateFlashcard}
+            disabled={isBusy}
+            activeOpacity={0.85}
+          >
+            {isCreatingFlashcards ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <FlashcardIcon width={clamp(width * 0.06, 22, 26)} height={clamp(width * 0.06, 22, 26)} />
+                <Text style={styles.flashcardButtonText}>Create Flashcards</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity
-          style={[styles.actionButton, styles.flashcardButton, isBusy && styles.buttonDisabled]}
-          onPress={handleCreateFlashcard}
-          disabled={isBusy}
-        >
-          {isCreatingFlashcards ? (
-            <ActivityIndicator size="small" color="#344E39" />
-          ) : (
-            <Text style={styles.actionButtonText}>FLASHCARD {'>'}</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.secondaryActionsContainer}>
-        <TouchableOpacity
-          style={[styles.secondaryButton, isBusy && styles.buttonDisabled]}
+          style={[styles.saveButton, isBusy && styles.buttonDisabled]}
           onPress={handleSaveDocument}
           disabled={isBusy}
+          activeOpacity={0.85}
         >
           {isSaving && !isCreatingFlashcards ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <Text style={styles.secondaryButtonText}>
-              {savedDocument ? 'Document Saved' : 'Save Document'}
-            </Text>
+            <>
+              <SaveIcon width={clamp(width * 0.055, 20, 24)} height={clamp(width * 0.055, 20, 24)} />
+              <Text style={styles.saveButtonText}>
+                {savedDocument ? 'Document Saved' : 'Save Document'}
+              </Text>
+            </>
           )}
         </TouchableOpacity>
       </View>
@@ -400,140 +485,196 @@ function SummaryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EEDB',
+    backgroundColor: BG,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    margin: 10,
-    borderRadius: 10,
-    backgroundColor: '#6B9071',
-  },
-  backButton: {
-    fontSize: 15,
-    color: '#fff',
-    fontWeight: '700',
-    width: 72,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-    textAlign: 'center',
+  scroll: {
     flex: 1,
   },
-  contentArea: {
-    flex: 1,
-    marginHorizontal: 10,
-    marginVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    padding: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+  scrollContent: {
+    paddingHorizontal: PAGE_PADDING,
+    paddingTop: clamp(height * 0.018, 12, 18),
+    paddingBottom: clamp(height * 0.02, 16, 22),
   },
-  contentInner: {
-    paddingBottom: 10,
-  },
-  pageSection: {
-    marginBottom: 20,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  pageTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#2D5341',
-    marginBottom: 10,
-  },
-  pageContent: {
-    fontSize: 13,
-    color: '#333',
-    lineHeight: 20,
-  },
-  infoBox: {
-    marginTop: 15,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: '#F0F0F0',
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#6B9071',
-  },
-  infoText: {
-    fontSize: 12,
-    color: '#555',
-    marginVertical: 4,
-  },
-  emptyContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#999',
-    fontWeight: '500',
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 10,
-    marginBottom: 12,
-  },
-  actionButton: {
-    flex: 1,
-    minHeight: 48,
-    paddingVertical: 12,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
+  summaryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: CARD_RADIUS,
+    padding: CARD_PADDING,
+    marginBottom: clamp(height * 0.014, 10, 14),
+    shadowColor: '#192018',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
-    shadowRadius: 3,
+    shadowRadius: 7,
     elevation: 4,
   },
-  backActionButton: {
-    backgroundColor: '#AEC3B0',
+  takeawayCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: CARD_RADIUS,
+    padding: CARD_PADDING,
+    marginBottom: clamp(height * 0.018, 12, 18),
+    shadowColor: '#192018',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 7,
+    elevation: 4,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: clamp(width * 0.025, 8, 12),
+    marginBottom: clamp(height * 0.014, 10, 14),
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: clamp(width * 0.025, 8, 11),
+    flexShrink: 1,
+  },
+  cardTitle: {
+    color: '#202020',
+    fontSize: CARD_TITLE_SIZE,
+    fontWeight: '800',
+  },
+  pagePill: {
+    backgroundColor: '#E8F1E1',
+    borderRadius: 9,
+    paddingHorizontal: clamp(width * 0.028, 9, 12),
+    paddingVertical: clamp(height * 0.009, 7, 9),
+  },
+  pagePillText: {
+    color: GREEN,
+    fontSize: SMALL_FONT,
+    fontWeight: '700',
+  },
+  summaryText: {
+    color: '#2A2A2A',
+    fontSize: BODY_FONT,
+    lineHeight: BODY_LINE,
+  },
+  extraPages: {
+    marginTop: clamp(height * 0.012, 10, 14),
+    gap: clamp(height * 0.012, 10, 14),
+  },
+  extraPageBlock: {
+    paddingTop: clamp(height * 0.012, 10, 14),
+    borderTopWidth: 1,
+    borderTopColor: '#E7E7E7',
+  },
+  extraPageTitle: {
+    color: GREEN,
+    fontSize: SMALL_FONT,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  extraPageText: {
+    color: '#383838',
+    fontSize: clamp(width * 0.036, 13, 15),
+    lineHeight: clamp(width * 0.055, 20, 23),
+  },
+  dashedRule: {
+    marginTop: clamp(height * 0.018, 14, 20),
+    borderBottomWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#CFCFCF',
+  },
+  takeawayList: {
+    marginTop: clamp(height * 0.014, 10, 14),
+    gap: clamp(height * 0.01, 8, 12),
+  },
+  takeawayItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: clamp(width * 0.025, 9, 12),
+  },
+  takeawayBullet: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: GREEN,
+    marginTop: 8,
+  },
+  takeawayText: {
+    flex: 1,
+    color: '#303030',
+    fontSize: clamp(width * 0.035, 13, 15),
+    lineHeight: clamp(width * 0.052, 19, 22),
+  },
+  emptyText: {
+    color: '#777777',
+    fontSize: SMALL_FONT,
+    lineHeight: clamp(SMALL_FONT * 1.45, 18, 21),
+  },
+  inlineLoading: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  inlineLoadingText: {
+    color: GREEN,
+    fontSize: SMALL_FONT,
+    fontWeight: '700',
+  },
+  actionsWrap: {
+    paddingHorizontal: PAGE_PADDING,
+    paddingBottom: clamp(height * 0.012, 10, 14),
+    backgroundColor: BG,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    gap: clamp(width * 0.03, 10, 14),
+    marginBottom: clamp(height * 0.012, 10, 12),
+  },
+  previousButton: {
+    flex: 1,
+    minHeight: ACTION_HEIGHT,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: GREEN,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: clamp(width * 0.02, 7, 10),
+  },
+  previousButtonText: {
+    color: GREEN,
+    fontSize: clamp(width * 0.04, 14, 16),
+    fontWeight: '800',
   },
   flashcardButton: {
-    backgroundColor: '#AEC3B0',
-  },
-  actionButtonText: {
-    color: '#344E39',
-    fontSize: 13,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  secondaryActionsContainer: {
-    justifyContent: 'center',
+    flex: 1.12,
+    minHeight: ACTION_HEIGHT,
+    borderRadius: 12,
+    backgroundColor: GREEN,
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    marginBottom: 10,
-  },
-  secondaryButton: {
-    minHeight: 46,
-    paddingVertical: 11,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    backgroundColor: '#6B9071',
-    width: '54%',
     justifyContent: 'center',
-    alignItems: 'center',
+    gap: clamp(width * 0.02, 7, 10),
+    shadowColor: '#2D3F2D',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
+    elevation: 4,
   },
-  secondaryButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#ffffff',
-    textAlign: 'center',
+  flashcardButtonText: {
+    color: '#FFFFFF',
+    fontSize: clamp(width * 0.04, 14, 16),
+    fontWeight: '800',
+  },
+  saveButton: {
+    minHeight: ACTION_HEIGHT,
+    borderRadius: 12,
+    backgroundColor: '#789A7B',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: clamp(width * 0.025, 8, 12),
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontSize: clamp(width * 0.04, 14, 16),
+    fontWeight: '800',
   },
   buttonDisabled: {
     opacity: 0.6,

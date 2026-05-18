@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   TextInput,
   FlatList,
+  Image,
   Alert,
   ActivityIndicator,
 } from 'react-native';
@@ -113,6 +114,13 @@ export const InviteMembersModal: React.FC<InviteMembersModalProps> = ({
       style={styles.userItem}
       onPress={() => handleSelectUser(item.id)}
     >
+      <View style={styles.userAvatar}>
+        {item.avatar_url ? (
+          <Image source={{ uri: item.avatar_url }} style={styles.userAvatarImage} />
+        ) : (
+          <Text style={styles.userAvatarText}>{item.username.slice(0, 1).toUpperCase()}</Text>
+        )}
+      </View>
       <View style={styles.userInfo}>
         <Text style={styles.username}>{item.username}</Text>
         <Text style={styles.email}>{item.email}</Text>
@@ -309,6 +317,26 @@ const styles = StyleSheet.create({
   },
   userInfo: {
     flex: 1,
+  },
+  userAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#B9CEB9',
+    marginRight: 10,
+  },
+  userAvatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
+  },
+  userAvatarText: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
+    color: '#2C4936',
   },
   username: {
     fontSize: 14,
